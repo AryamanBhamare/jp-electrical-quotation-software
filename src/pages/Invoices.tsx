@@ -7,6 +7,7 @@ import {
   Copy,
   FileDown,
   FileText,
+  FileUp,
   Filter,
   Pencil,
   Plus,
@@ -132,6 +133,9 @@ export default function Invoices() {
           <p className="text-sm text-muted-foreground">{invoices.length} total</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => navigate('/upload')} className="gap-1.5">
+            <FileUp className="h-3.5 w-3.5" /> Upload PO
+          </Button>
           <Button size="sm" onClick={() => { const id = useStore.getState().createBlankInvoice(); navigate(`/editor/${id}`); }} className="gap-1.5">
             <Plus className="h-3.5 w-3.5" /> New Tax Invoice
           </Button>

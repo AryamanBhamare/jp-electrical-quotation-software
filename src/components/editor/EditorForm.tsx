@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { RefreshCw, Save, UserPlus } from 'lucide-react';
-import type { InvoiceCopyType, QuoteItem, Quotation } from '@shared/types';
+import type { QuoteItem, Quotation } from '@shared/types';
 import { CURRENCIES, INDIAN_STATES, INVOICE_COPY_TYPES, emptyInvoiceOptions } from '@shared/types';
 import { useStore } from '@/store/useStore';
+import { cn } from '@/lib/utils';
 import { TextField, TextAreaField, NumberField, Field } from './Field';
 import { ItemTable } from './ItemTable';
 import { SectionCard } from './SectionCard';
@@ -183,23 +184,27 @@ export function EditorForm({ quote }: { quote: Quotation }) {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <TextField label="Invoice No." value={quote.invoice?.invoiceNo ?? ''} onChange={(v) => setInvoice({ invoiceNo: v })} />
             <TextField label="Invoice Date" type="date" value={quote.invoice?.invoiceDate ?? ''} onChange={(v) => setInvoice({ invoiceDate: v })} />
-            <Field label="Copy Type">
-              <Select
-                value={quote.invoice?.copyType ?? 'ORIGINAL FOR RECIPIENT'}
-                onValueChange={(v) => setInvoice({ copyType: v as InvoiceCopyType })}
-              >
-                <SelectTrigger className="text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
+            <div className="sm:col-span-2">
+              <Field label="Copy Type">
+                <div className="flex flex-wrap gap-1.5">
                   {INVOICE_COPY_TYPES.map((c) => (
-                    <SelectItem key={c} value={c} className="text-xs">
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setInvoice({ copyType: c })}
+                      className={cn(
+                        'rounded-md border px-2.5 py-1.5 text-left text-[11px] font-medium leading-tight transition-colors',
+                        quote.invoice?.copyType === c
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border bg-background/60 text-muted-foreground hover:border-primary/40 hover:text-foreground',
+                      )}
+                    >
                       {c}
-                    </SelectItem>
+                    </button>
                   ))}
-                </SelectContent>
-              </Select>
-            </Field>
+                </div>
+              </Field>
+            </div>
             <TextField label="Place of Supply" value={quote.invoice?.placeOfSupply ?? ''} onChange={(v) => setInvoice({ placeOfSupply: v })} placeholder="Maharashtra" />
             <TextField label="State Code (GST)" value={quote.invoice?.stateCode ?? ''} onChange={(v) => setInvoice({ stateCode: v })} placeholder="27" />
             <TextField label="IRN (e-Invoice No.)" value={quote.invoice?.irn ?? ''} onChange={(v) => setInvoice({ irn: v })} />
