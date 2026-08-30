@@ -76,6 +76,15 @@ function isNumericToken(t: string): boolean {
   return RE.numeric.test(t.trim());
 }
 
+// HSN / SAC codes are pure integers (4-8 digits) with no decimal or thousand
+// separator. Prices/amounts nearly always carry ".00" or a comma — guarded below,
+// so a trailing HSN/SAC code is never mistaken for the amount.
+function isCodeLike(text: string): boolean {
+  const cleaned = text.replace(/[₹$€£\s]/g, '');
+  if (/[.,]/.test(cleaned)) return false;
+  return /^\d{4,8}$/.test(cleaned);
+}
+
 // ── small text helpers ──────────────────────────────────────
 const ID_STOPWORDS = new Set([
   'PURCHASE', 'ORDER', 'NO', 'NUM', 'NUMBER', 'PO', 'P.O', 'SERVICE', 'CODE', 'REF', 'REFERENCE',
@@ -538,12 +547,22 @@ function buildDescription(tokens: Array<{ text: string; idx: number; isNum: bool
   return cleanDescription(parts.join(' '));
 }
 
-function finishRow(text: string, tokens: Array<{ text: string; idx: number; isNum: boolean }>, row: ParsedRow, consumed: Set<number>, unitIdx: number): ParsedRow {
+function finishRow(
+  text: string,
+  tokens: Array<{ text: string; idx: number; isNum: boolean }>,
+  row: ParsedRow,
+  consumed: Set<number>,
+  unitIdx: number,
+  opts?: { hasHsnCol?: boolean },
+): ParsedRow {
   if (row.amount == null && row.quantity != null && row.rate != null) {
     row.amount = Math.round(row.quantity * row.rate * 100) / 100;
   }
   const full = text.replace(/\s+/g, ' ').trim();
-  const hsn = firstMatch(full, RE.hsnLabel) ?? tokens.find((t) => t.isNum && /^\d{6,8}$/.test(t.text))?.text;
+  const hsn =
+    firstMatch(full, RE.hsnLabel) ??
+    tokens.find((t) => t.isNum && /^\d{6,8}$/.test(t.text))?.text ??
+    (opts?.hasHsnCol ? tokens.find((t) => t.isNum && isCodeLike(t.text))?.text : undefined);
   if (hsn) row.hsnCode = hsn;
   const dr = extractDrawRev(full);
   if (dr.drawingNo) row.drawingNo = dr.drawingNo;
@@ -628,7 +647,7 @@ function parseItemRow(text: string, cols: HeaderCol[]): ParsedRow | null {
           consumed.add(after[after.length - 1].idx);
         }
       }
-      return finishRow(text, tokens, row, consumed, unitIdx);
+      return finishRow(text, tokens, row, consumed, unitIdx, { hasHsnCol: colRoles.includes('hsn') });
     }
   }
 
@@ -637,23 +656,28 @@ function parseItemRow(text: string, cols: HeaderCol[]): ParsedRow | null {
     const hasDisc = colRoles.includes('disc');
     const { kept, removed } = stripTaxPercentages(numerics.filter((t) => t.idx !== qtyNumIdx), hasTax, nTax);
     removed.forEach((i) => consumed.add(i));
-    if (kept.length >= 2) {
-      let ri = kept.length - 1;
-      row.amount = num(kept[ri].text) ?? undefined;
+    const money = kept.filter((t) => !isCodeLike(t.text));
+    if (money.length >= 2) {
+      let ri = money.length - 1;
+      row.amount = num(money[ri].text) ?? undefined;
       ri--;
       if (hasDisc && ri >= 0) ri--;
-      if (ri >= 0) row.rate = num(kept[ri].text) ?? undefined;
-    } else if (kept.length === 1) {
-      row.rate = num(kept[0].text) ?? undefined;
+      if (ri >= 0) row.rate = num(money[ri].text) ?? undefined;
+    } else if (money.length === 1) {
+      row.rate = num(money[0].text) ?? undefined;
     }
     kept.forEach((t) => consumed.add(t.idx));
-    return finishRow(text, tokens, row, consumed, unitIdx);
+    return finishRow(text, tokens, row, consumed, unitIdx, { hasHsnCol: colRoles.includes('hsn') });
   }
 
   // no unit word → consume numerics right-to-left against the header's numeric columns
   const { kept, removed } = stripTaxPercentages(numerics, hasTax, nTax);
   removed.forEach((i) => consumed.add(i));
-  const working = kept;
+  // HSN / SAC codes (pure 4-8 digit integers) must never be mistaken for prices.
+  // Assign qty/rate/amount from money-like tokens first; code tokens are dropped
+  // from the description but still detected as the HSN code below.
+  const codes = kept.filter((t) => isCodeLike(t.text));
+  const working = kept.filter((t) => !isCodeLike(t.text));
   const rolesRight = colRoles.filter((r) => r === 'amount' || r === 'disc' || r === 'rate' || r === 'qty' || r === 'tax').reverse();
   for (const role of rolesRight) {
     if (working.length === 0) break;
@@ -667,6 +691,7 @@ function parseItemRow(text: string, cols: HeaderCol[]): ParsedRow | null {
     else if (role === 'qty' && row.quantity == null) row.quantity = v;
     // 'disc' is consumed but its value is not part of the quotation
   }
+  codes.forEach((t) => consumed.add(t.idx));
 
   // fallback when the header gave us no usable numeric columns
   if (row.amount == null && row.rate == null && row.quantity == null && working.length >= 2) {
@@ -684,7 +709,7 @@ function parseItemRow(text: string, cols: HeaderCol[]): ParsedRow | null {
     }
   }
 
-  return finishRow(text, tokens, row, consumed, unitIdx);
+  return finishRow(text, tokens, row, consumed, unitIdx, { hasHsnCol: colRoles.includes('hsn') });
 }
 
 function parseNumericFallback(text: string): PoItem | null {
@@ -711,22 +736,23 @@ function parseNumericFallback(text: string): PoItem | null {
   }
 
   if (qtyNumIdx >= 0) {
-    const remaining = numerics.filter((t) => t.idx !== qtyNumIdx);
-    if (remaining.length >= 2) {
-      row.amount = num(remaining[remaining.length - 1].text) ?? undefined;
-      row.rate = num(remaining[remaining.length - 2].text) ?? undefined;
-    } else if (remaining.length === 1) {
-      row.rate = num(remaining[0].text) ?? undefined;
+    const money = numerics.filter((t) => t.idx !== qtyNumIdx && !isCodeLike(t.text));
+    if (money.length >= 2) {
+      row.amount = num(money[money.length - 1].text) ?? undefined;
+      row.rate = num(money[money.length - 2].text) ?? undefined;
+    } else if (money.length === 1) {
+      row.rate = num(money[0].text) ?? undefined;
     } else {
       return null;
     }
-    remaining.forEach((t) => consumed.add(t.idx));
-  } else {
-    if (numerics.length < 3) return null;
-    row.amount = num(numerics[numerics.length - 1].text) ?? undefined;
-    row.rate = num(numerics[numerics.length - 2].text) ?? undefined;
-    row.quantity = num(numerics[numerics.length - 3].text) ?? undefined;
     numerics.forEach((t) => consumed.add(t.idx));
+  } else {
+    const money = numerics.filter((t) => !isCodeLike(t.text));
+    if (money.length < 3) return null;
+    numerics.forEach((t) => consumed.add(t.idx));
+    row.amount = num(money[money.length - 1].text) ?? undefined;
+    row.rate = num(money[money.length - 2].text) ?? undefined;
+    row.quantity = num(money[money.length - 3].text) ?? undefined;
   }
 
   const finished = finishRow(text, tokens, row, consumed, unitIdx);

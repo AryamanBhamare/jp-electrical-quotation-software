@@ -12,6 +12,7 @@ import {
   Loader2,
   Mail,
   Phone,
+  ReceiptText,
   RefreshCw,
   Rows3,
   Search,
@@ -19,7 +20,7 @@ import {
 } from 'lucide-react';
 import type { ParseProgress } from '@/services/parser';
 import { parsePdfFile } from '@/services/parser';
-import { buildQuotationFromPo, nextQuoteNumber } from '@/services/builder';
+import { buildQuotationFromPo, buildInvoiceFromPo, nextQuoteNumber } from '@/services/builder';
 import { useStore } from '@/store/useStore';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
@@ -87,6 +88,17 @@ export default function Upload() {
     navigate(`/editor/${q.id}`);
   };
 
+  const createInvoice = () => {
+    if (!outcome) return;
+    const seq = settings.invoiceSeq + 1;
+    const q = buildInvoiceFromPo(outcome.result.po, company, settings);
+    q.sourcePo = outcome.fileName;
+    setCurrent(q);
+    useStore.getState().updateSettings({ invoiceSeq: seq });
+    toast.success('Tax Invoice created — review & export');
+    navigate(`/editor/${q.id}`);
+  };
+
   const forceOcr = () => {
     if (!fileRef.current) return;
     void runParse(fileRef.current, true);
@@ -96,10 +108,10 @@ export default function Upload() {
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="text-center">
         <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
-          Purchase Order <span className="text-gradient">→ Quotation</span>
+          Purchase Order <span className="text-gradient">→ Quotation or Tax Invoice</span>
         </h1>
         <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
-          Upload a PDF. Every field is auto-extracted into an editable quotation — nothing is ever lost.
+          Upload a PDF. Every field is auto-extracted into an editable quotation — or a Tax Invoice (Billing) — nothing is ever lost.
           Scanned PDFs are handled automatically with built-in OCR.
         </p>
       </div>
@@ -165,7 +177,7 @@ export default function Upload() {
       ) : null}
 
       {stage === 'review' && outcome ? (
-        <ReviewPanel outcome={outcome} onCreate={createQuotation} onRetry={() => setStage('idle')} onForceOcr={forceOcr} />
+        <ReviewPanel outcome={outcome} onCreate={createQuotation} onCreateInvoice={createInvoice} onRetry={() => setStage('idle')} onForceOcr={forceOcr} />
       ) : null}
     </div>
   );
@@ -174,11 +186,13 @@ export default function Upload() {
 function ReviewPanel({
   outcome,
   onCreate,
+  onCreateInvoice,
   onRetry,
   onForceOcr,
 }: {
   outcome: Awaited<ReturnType<typeof parsePdfFile>>;
   onCreate: () => void;
+  onCreateInvoice: () => void;
   onRetry: () => void;
   onForceOcr: () => void;
 }) {
@@ -285,12 +299,18 @@ function ReviewPanel({
             Re-run OCR
           </Button>
         </div>
-        <Button size="lg" onClick={onCreate} className="gap-2">
-          Open in Quotation Editor <ArrowRight className="h-4 w-4" />
-        </Button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button variant="outline" onClick={onCreateInvoice} className="gap-2">
+            <ReceiptText className="h-4 w-4" /> Create Tax Invoice
+          </Button>
+          <Button size="lg" onClick={onCreate} className="gap-2">
+            Open in Quotation Editor <ArrowRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
       <p className="text-center text-[11px] text-muted-foreground">
         Everything is editable in the editor — adjust any field, then export PDF / Word instantly.
+        Create a Tax Invoice (Billing) from the same file, or a quotation.
       </p>
     </motion.div>
   );

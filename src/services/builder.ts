@@ -118,6 +118,24 @@ export function buildQuotationFromPo(
   };
 }
 
+/**
+ * Builds a Tax Invoice directly from a parsed Purchase Order — same extraction
+ * logic as buildQuotationFromPo, but emitted as a Billing document.
+ */
+export function buildInvoiceFromPo(po: PoData, company: CompanyDetails, settings: AppSettings): Quotation {
+  const seq = settings.invoiceSeq + 1;
+  const invoiceNo = nextInvoiceNumber(settings.invoicePrefix, settings.quoteYear, seq);
+  const q = buildQuotationFromPo(po, company, settings, invoiceNo);
+  const invoice = emptyInvoiceOptions();
+  invoice.invoiceNo = invoiceNo;
+  invoice.placeOfSupply = company.state ?? '';
+  invoice.stateCode = company.stateCode ?? '';
+  q.title = `Tax Invoice ${invoiceNo}`;
+  q.docType = 'invoice';
+  q.invoice = invoice;
+  return q;
+}
+
 export function buildBlankQuotation(quoteNo: string, company: CompanyDetails, settings: AppSettings): Quotation {
   const now = new Date().toISOString();
   return {
