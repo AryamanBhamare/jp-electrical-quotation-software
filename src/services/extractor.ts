@@ -157,7 +157,7 @@ function isTotalsLine(text: string): boolean {
   const t = text.trim();
   if (/^(cgst|sgst|igst|cess)\b/i.test(t)) return true;
   // Labels may be buried mid-line (e.g. "Terms & Conditions 1.000 Taxable Amount 15,000.00").
-  const m = t.toLowerCase().match(/(?:^|[^\w&])(taxable\s*(?:amount|value)|sub\s*total|subtotal|grand\s*total|net\s*(?:amount|total)|total\s*(?:amount|taxable|value|before|inr|payable)?|amount\s*payable|round\s*(?:off|ing)|discount|adjustment|balance|paid|due|less)/);
+  const m = t.toLowerCase().match(/(?:^|[^\w&])(taxable\s*(?:amount|value)|sub\s*total|subtotal|grand\s*total|net\s*(?:amount|total)|basic\s*amount|total\s*(?:amount|taxable|value|before|inr|payable)?|amount\s*payable|round\s*(?:off|ing)|discount|adjustment|balance|paid|due|less)/);
   if (!m) return false;
   const labelEnd = (m.index ?? 0) + m[0].length;
   const rest = t.slice(labelEnd);
@@ -542,6 +542,8 @@ function buildDescription(tokens: Array<{ text: string; idx: number; isNum: bool
     }
     if (/^[-–—/\\:;,.*=|+@x×]+$/.test(t.text)) continue;
     if (/^(hsn|sac|hsn\/sac|code|part|no|nos|dt|date|rev|revision|drg|dwg|drw|drawing|qty|quantity|uom|unit|each|per)$/i.test(t.text)) continue;
+    // SAP material / item codes ("SERRNB03760051") — keep real product text, drop the code.
+    if (/^[A-Za-z]{2,}\d{5,}[A-Za-z0-9]*$/i.test(t.text)) continue;
     parts.push(t.text);
   }
   return cleanDescription(parts.join(' '));
@@ -610,16 +612,20 @@ function parseItemRow(text: string, cols: HeaderCol[]): ParsedRow | null {
   let unitIdx = -1;
   let qtyNumIdx = -1;
 
-  // unit-anchored qty ("1 NOS", "10 PCS")
+  // unit-anchored qty ("1 NOS", "10 PCS") — but only when the number before the unit is a
+  // REAL quantity. An HSN/SAC or item code printed before the unit word ("998717 NOS")
+  // must never be treated as the quantity.
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     if (t.isNum || i === 0 || !tokens[i - 1].isNum) continue;
     if (QTY_UNIT.test(t.text)) {
       unitIdx = i;
       row.unit = t.text.toUpperCase();
-      qtyNumIdx = tokens[i - 1].idx;
-      row.quantity = num(tokens[i - 1].text) ?? undefined;
-      consumed.add(qtyNumIdx);
+      if (!isCodeLike(tokens[i - 1].text)) {
+        qtyNumIdx = tokens[i - 1].idx;
+        row.quantity = num(tokens[i - 1].text) ?? undefined;
+        consumed.add(qtyNumIdx);
+      }
       break;
     }
   }
@@ -650,6 +656,12 @@ function parseItemRow(text: string, cols: HeaderCol[]): ParsedRow | null {
       return finishRow(text, tokens, row, consumed, unitIdx, { hasHsnCol: colRoles.includes('hsn') });
     }
   }
+
+  // Lazily-labeled continuation lines ("Description : 3.00 HP Motor...", "Remark 2.FITTED...")
+  // or a lone marker number must not become item rows. Unit-less rows with only small
+  // integers are power/size fragments ("MOTOR 3 HP 3 PHASE"), not prices — skip too.
+  if (/^(description|remark|term\s*value|schedule|note|notes?)\b/i.test(text.trim())) return null;
+  if (qtyNumIdx < 0 && (numerics.length < 2 || (numerics.length < 3 && !numerics.some((nn) => /[.,]/.test(nn.text))))) return null;
 
   if (qtyNumIdx >= 0) {
     // unit-anchored rows: the remaining numbers are [rate(, disc), amount]
@@ -728,9 +740,11 @@ function parseNumericFallback(text: string): PoItem | null {
     if (QTY_UNIT.test(t.text)) {
       unitIdx = i;
       row.unit = t.text.toUpperCase();
-      qtyNumIdx = tokens[i - 1].idx;
-      row.quantity = num(tokens[i - 1].text) ?? undefined;
-      consumed.add(qtyNumIdx);
+      if (!isCodeLike(tokens[i - 1].text)) {
+        qtyNumIdx = tokens[i - 1].idx;
+        row.quantity = num(tokens[i - 1].text) ?? undefined;
+        consumed.add(qtyNumIdx);
+      }
       break;
     }
   }
@@ -798,6 +812,11 @@ export function extractTable(lines: PoLine[]): PoItem[] {
       prevY = l.y;
       continue;
     }
+    // page footers / approval bands are not table rows
+    if (/^(approved\s*by\b)|(page\s+\d+\s+of\s+\d)|(^page\s+\d+)\b/i.test(text)) {
+      prevY = l.y;
+      continue;
+    }
 
     if (headerInfo) {
       if (!active) {
@@ -826,7 +845,7 @@ export function extractTable(lines: PoLine[]): PoItem[] {
           });
         } else {
           items.push({
-            description: row.description || text,
+            description: row.description,
             hsnCode: row.hsnCode,
             drawingNo: row.drawingNo,
             revision: row.revision,
@@ -842,7 +861,8 @@ export function extractTable(lines: PoLine[]): PoItem[] {
 
       // non-numeric line → wrapped-description continuation for the last row
       if (lastItem && gap < 14 && text.length < 220) {
-        lastItem.description = [lastItem.description, text].filter(Boolean).join(' ').trim();
+        const cleaned = text.replace(/^description\s*[:#\-.]?\s*/i, '');
+        lastItem.description = [lastItem.description, cleaned].filter(Boolean).join(' ').trim();
       } else if (!lastItem) {
         items.push({ description: text });
       }

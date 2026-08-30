@@ -18,7 +18,7 @@ export default function Analytics() {
     const now = new Date();
     for (let i = 13; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       const v = analytics[key] ?? { created: 0, exported: 0 };
       out.push({ date: key, label: d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), created: v.created, exported: v.exported });
     }

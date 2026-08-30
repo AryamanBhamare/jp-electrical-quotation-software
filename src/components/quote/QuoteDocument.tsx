@@ -1,6 +1,6 @@
 import { forwardRef, useMemo } from 'react';
 import type { Quotation, QuoteTemplate } from '@shared/types';
-import { computeTotals } from '@/lib/calculations';
+import { computeTotals, itemAmount } from '@/lib/calculations';
 import { formatDate, formatNumber } from '@/lib/format';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -319,7 +319,7 @@ const QuoteDocument = forwardRef<HTMLDivElement, Props>(({ quote, template, clas
                 <td className={td} style={{ textAlign: 'center' }}>{it.hsnCode}</td>
                 <td className={td} style={{ textAlign: 'center' }}>{it.quantity}</td>
                 <td className={td} style={{ textAlign: 'right' }}>{it.rate ? formatNumber(it.rate) : ''}</td>
-                <td className={td} style={{ textAlign: 'right' }}>{it.amount.toFixed(2)}</td>
+                <td className={td} style={{ textAlign: 'right' }}>{(it.amount ?? itemAmount(it)).toFixed(2)}</td>
               </tr>
             ))
           )}

@@ -29,15 +29,16 @@ export default function Dashboard() {
       const t = computeTotals(q.items, q.gst, q.discount, q.roundOff, q.details.currency);
       return sum + t.rounded;
     }, 0);
+    const nowD = new Date();
+    const thisMonthKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
     const thisMonth = Object.entries(analytics)
-      .filter(([d]) => d.startsWith(new Date().toISOString().slice(0, 7)))
+      .filter(([d]) => d.startsWith(thisMonthKey))
       .reduce((s, [, v]) => s + v.created, 0);
     const sym = settings.currency.symbol;
     return { totalValue, sym, thisMonth };
   }, [quotations, analytics, settings.currency.symbol]);
 
   const recent = [...quotations].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 6);
-  const todayKey = new Date().toISOString().slice(0, 10);
 
   const quickStats = [
     { label: 'Total Quotations', value: String(quotations.length), icon: FileText, tint: 'from-sky-500 to-blue-600' },

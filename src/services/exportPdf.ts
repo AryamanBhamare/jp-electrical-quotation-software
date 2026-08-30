@@ -3,7 +3,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable, { type UserOptions } from 'jspdf-autotable';
 import type { Quotation, QuoteTemplate } from '@shared/types';
-import { computeTotals } from '@/lib/calculations';
+import { computeTotals, itemAmount } from '@/lib/calculations';
 import { formatDate, formatNumber } from '@/lib/format';
 
 interface ImageDims {
@@ -336,7 +336,7 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
       it.hsnCode || '',
       String(it.quantity ?? ''),
       it.rate ? formatNumber(it.rate) : '',
-      it.amount ? it.amount.toFixed(2) : '',
+      (it.amount ?? itemAmount(it)).toFixed(2),
     ];
   });
 

@@ -198,9 +198,7 @@ export async function buildDocx(q: Quotation, template: QuoteTemplate): Promise<
         }),
       );
     }
-    const posLine = '';
-    if (posLine) headerChildren.push(para(run(posLine, { size: 20, color: '374151' }), { before: 120, after: 0 }));
-  }
+    }
   headerChildren.push(para(run(''), { before: 40, after: 0 }));
 
   const footerChildren = [
@@ -226,17 +224,76 @@ export async function buildDocx(q: Quotation, template: QuoteTemplate): Promise<
   ].filter(Boolean).join('  |  ');
   const cityLine = [q.customer.city, q.customer.state].filter(Boolean).join(', ');
 
-  body.push(para(run('To,', { bold: true }), { before: 200, after: 0 }));
-  if (q.customer.attention) body.push(para(run(q.customer.attention, { bold: true }), { after: 0 }));
-  if (q.customer.company || q.customer.name) body.push(para(run(q.customer.company || q.customer.name, { bold: true, size: 24 }), { after: 0 }));
-  if (q.customer.address) body.push(...q.customer.address.split('\n').filter(Boolean).map((l) => para(run(l, { size: 22 }), { after: 0 })));
-  if (cityLine || q.customer.pincode) body.push(para(run([cityLine, q.customer.pincode].filter(Boolean).join(', '), { size: 22 }), { after: 0 }));
-  if (customerContact) body.push(para(run(customerContact, { size: 20, color: '374151' }), { before: 40, after: 0 }));
+  if (isInvoice) {
+    const billTo: Paragraph[] = [
+      para(run('Bill To', { bold: true, size: 20, color: '6b7280' }), { after: 60 }),
+    ];
+    if (q.customer.attention) billTo.push(para(run(q.customer.attention, { bold: true, size: 22 }), { after: 0 }));
+    if (q.customer.company || q.customer.name) billTo.push(para(run(q.customer.company || q.customer.name, { bold: true, size: 24 }), { after: 40 }));
+    if (q.customer.address) billTo.push(...q.customer.address.split('\n').filter(Boolean).map((l) => para(run(l, { size: 20 }), { after: 0 })));
+    if (cityLine || q.customer.pincode) billTo.push(para(run([cityLine, q.customer.pincode].filter(Boolean).join(', '), { size: 20 }), { after: 0 }));
+    if (customerContact) billTo.push(para(run(customerContact, { size: 18, color: '374151' }), { before: 40, after: 0 }));
+
+    const invCells: Array<[string, string]> = [];
+    if (inv?.invoiceNo) invCells.push(['Invoice No.', inv.invoiceNo]);
+    if (inv?.invoiceDate) invCells.push(['Invoice Date', formatDate(inv.invoiceDate)]);
+    if (q.details.poNumber || q.details.reference) invCells.push(['Ref / P.O. No', q.details.poNumber || q.details.reference || '']);
+    if (q.details.poDate) invCells.push(['P.O. Date', formatDate(q.details.poDate)]);
+    const posText = inv?.placeOfSupply ? `${inv.placeOfSupply}${inv.stateCode ? ` (${inv.stateCode})` : ''}` : '';
+    if (posText) invCells.push(['Place of Supply', posText]);
+    if (inv?.irn) invCells.push(['IRN', inv.irn]);
+
+    const outerRowChildren: TableCell[] = [
+      new TableCell({
+        width: { size: invCells.length ? 52 : 100, type: WidthType.PERCENTAGE },
+        margins: { top: 40, bottom: 40, left: 0, right: invCells.length ? 120 : 0 },
+        children: billTo,
+      }),
+    ];
+    if (invCells.length) {
+      outerRowChildren.push(
+        new TableCell({
+          width: { size: 48, type: WidthType.PERCENTAGE },
+          margins: { top: 40, bottom: 40, left: 120, right: 0 },
+          children: [
+            new Table({
+              width: { size: 100, type: WidthType.PERCENTAGE },
+              borders: BORDER_SOFT,
+              rows: invCells.map(
+                ([label, value]) =>
+                  new TableRow({
+                    children: [
+                      cell(label, { bold: true, align: AlignmentType.RIGHT, width: '42', bg: '#f3f4f6', size: 18 }),
+                      cell(value, { align: AlignmentType.RIGHT, width: '58', size: 18 }),
+                    ],
+                  }),
+              ),
+            }),
+          ],
+        }),
+      );
+    }
+    body.push(
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: BORDER_NONE,
+        rows: [new TableRow({ children: outerRowChildren })],
+      }),
+    );
+    body.push(para(run(''), { before: 80, after: 0 }));
+  } else {
+    body.push(para(run('To,', { bold: true }), { before: 200, after: 0 }));
+    if (q.customer.attention) body.push(para(run(q.customer.attention, { bold: true }), { after: 0 }));
+    if (q.customer.company || q.customer.name) body.push(para(run(q.customer.company || q.customer.name, { bold: true, size: 24 }), { after: 0 }));
+    if (q.customer.address) body.push(...q.customer.address.split('\n').filter(Boolean).map((l) => para(run(l, { size: 22 }), { after: 0 })));
+    if (cityLine || q.customer.pincode) body.push(para(run([cityLine, q.customer.pincode].filter(Boolean).join(', '), { size: 22 }), { after: 0 }));
+    if (customerContact) body.push(para(run(customerContact, { size: 20, color: '374151' }), { before: 40, after: 0 }));
+  }
 
   if (q.details.subject) {
     body.push(para([run('SUB: ', { bold: true, size: 24 }), run(q.details.subject, { size: 24 })], { before: 200, after: 0 }));
   }
-  if (q.details.poNumber || q.details.reference) {
+  if (!isInvoice && (q.details.poNumber || q.details.reference)) {
     const refText = q.details.poNumber
       ? `YOUR P.ORDER NO. ${q.details.poNumber}${q.details.poDate ? `  DT.${formatDate(q.details.poDate)}` : ''}`
       : q.details.reference || '';
