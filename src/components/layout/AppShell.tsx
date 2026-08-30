@@ -8,6 +8,7 @@ import {
   LayoutTemplate,
   Moon,
   Plus,
+  ReceiptText,
   Search,
   Settings,
   Sun,
@@ -20,12 +21,14 @@ import {
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { isInvoice } from '@shared/types';
 import { cn } from '@/lib/utils';
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: Home, end: true },
   { to: '/upload', label: 'Upload PO', icon: Upload },
   { to: '/quotations', label: 'Quotations', icon: FileText },
+  { to: '/invoices', label: 'Billing / Invoices', icon: ReceiptText },
   { to: '/customers', label: 'Customers', icon: Users },
   { to: '/templates', label: 'Templates', icon: LayoutTemplate },
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },
@@ -208,10 +211,11 @@ function GlobalSearch() {
     ? quotations
         .filter(
           (x) =>
-            x.details.quoteNo.toLowerCase().includes(q.toLowerCase()) ||
-            x.details.poNumber.toLowerCase().includes(q.toLowerCase()) ||
-            x.customer.name.toLowerCase().includes(q.toLowerCase()) ||
-            x.items.some((it) => it.description.toLowerCase().includes(q.toLowerCase())),
+            !isInvoice(x) &&
+            (x.details.quoteNo.toLowerCase().includes(q.toLowerCase()) ||
+              x.details.poNumber.toLowerCase().includes(q.toLowerCase()) ||
+              x.customer.name.toLowerCase().includes(q.toLowerCase()) ||
+              x.items.some((it) => it.description.toLowerCase().includes(q.toLowerCase()))),
         )
         .slice(0, 6)
     : [];

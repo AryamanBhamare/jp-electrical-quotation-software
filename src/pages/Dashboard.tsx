@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowUpRight, FileText, FileUp, Plus, TrendingUp, Users, Wallet, Zap } from 'lucide-react';
 import { useStore } from '@/store/useStore';
+import { isInvoice } from '@shared/types';
 import { computeTotals } from '@/lib/calculations';
 import { formatMoney } from '@/lib/format';
 import { Button } from '@/components/ui/button';
@@ -16,7 +17,8 @@ const fadeUp = {
 };
 
 export default function Dashboard() {
-  const quotations = useStore((s) => s.quotations);
+  const allDocuments = useStore((s) => s.quotations);
+  const quotations = useMemo(() => allDocuments.filter((q) => !isInvoice(q)), [allDocuments]);
   const customers = useStore((s) => s.customers);
   const analytics = useStore((s) => s.analytics);
   const settings = useStore((s) => s.settings);

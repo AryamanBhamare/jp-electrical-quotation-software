@@ -5,13 +5,12 @@ import { toast } from 'sonner';
 import {
   CheckSquare,
   Copy,
-  Download,
   FileDown,
-  FileSpreadsheet,
   FileText,
   Filter,
   Pencil,
   Plus,
+  ReceiptText,
   Search,
   Share2,
   Square,
@@ -20,12 +19,10 @@ import {
 import { useStore } from '@/store/useStore';
 import { computeTotals } from '@/lib/calculations';
 import { formatMoney, formatDate } from '@/lib/format';
-import { quotationsToCsv, downloadText } from '@/lib/csv';
-import { exportQuotationsExcel } from '@/services/exportExcel';
+import { withLiveCompany } from '@/services/builder';
 import { buildPdf } from '@/services/exportPdf';
 import { downloadBlob } from '@/lib/csv';
 import { encodeDataURL, buildShareUrl } from '@/lib/codec';
-import { withLiveCompany } from '@/services/builder';
 import { isInvoice } from '@shared/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -56,11 +53,10 @@ import {
 
 type StatusFilter = 'all' | 'draft' | 'final';
 
-export default function Quotations() {
-  const allDocuments = useStore((s) => s.quotations);
-  const quotations = useMemo(() => allDocuments.filter((q) => !isInvoice(q)), [allDocuments]);
+export default function Invoices() {
+  const documents = useStore((s) => s.quotations);
+  const invoices = useMemo(() => documents.filter((q) => isInvoice(q)), [documents]);
   const templates = useStore((s) => s.templates);
-  const customers = useStore((s) => s.customers);
   const company = useStore((s) => s.company);
   const duplicate = useStore((s) => s.duplicateQuotation);
   const remove = useStore((s) => s.deleteQuotation);
@@ -76,20 +72,19 @@ export default function Quotations() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return [...quotations]
+    return [...invoices]
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .filter((x) => (status === 'all' ? true : x.status === status))
       .filter(
         (x) =>
           !q ||
-          x.details.quoteNo.toLowerCase().includes(q) ||
+          (x.invoice?.invoiceNo ?? x.details.quoteNo).toLowerCase().includes(q) ||
           x.details.poNumber.toLowerCase().includes(q) ||
-          x.title.toLowerCase().includes(q) ||
           x.customer.name.toLowerCase().includes(q) ||
           x.customer.company.toLowerCase().includes(q) ||
           x.items.some((it) => it.description.toLowerCase().includes(q)),
       );
-  }, [quotations, status, query]);
+  }, [invoices, status, query]);
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -104,33 +99,20 @@ export default function Quotations() {
     setSelected((prev) => (prev.size === filtered.length ? new Set() : new Set(filtered.map((f) => f.id))));
   };
 
-  const exportListCsv = () => {
-    downloadText(quotationsToCsv(filtered), 'quotations.csv', 'text/csv');
-    logAudit('EXPORT_CSV', `${filtered.length} quotations`);
-  };
+  const invoiceLabel = (x: (typeof invoices)[number]) => x.invoice?.invoiceNo ?? x.details.quoteNo;
 
-  const exportListExcel = () => {
-    exportQuotationsExcel(filtered);
-    logAudit('EXPORT_EXCEL', `${filtered.length} quotations`);
-  };
-
-  const bulkPdf = async () => {
-    const targets = quotations.filter((q) => selected.has(q.id));
-    if (!targets.length) return;
-    toast.info(`Exporting ${targets.length} PDF(s)…`);
-    for (const q of targets) {
-      const t = templates.find((x) => x.id === q.templateId) ?? templates[0];
-      const tmpl = { ...t, accent: q.theme?.accent || t.accent, font: q.theme?.font || t.font };
-      const blob = await buildPdf(withLiveCompany(q, company), tmpl);
-      downloadBlob(blob, `${q.details.quoteNo}.pdf`);
-      await new Promise((r) => setTimeout(r, 600));
-    }
-    logAudit('EXPORT_PDF', `${targets.length} quotations (bulk)`);
-    toast.success('Bulk PDF export done');
+  const pdfOne = async (id: string) => {
+    const q = invoices.find((x) => x.id === id);
+    if (!q) return;
+    const t = templates.find((x) => x.id === q.templateId) ?? templates[0];
+    const tmpl = { ...t, accent: q.theme?.accent || t.accent, font: q.theme?.font || t.font };
+    const blob = await buildPdf(withLiveCompany(q, company), tmpl);
+    downloadBlob(blob, `${invoiceLabel(q)}.pdf`);
+    logAudit('EXPORT_PDF', invoiceLabel(q));
   };
 
   const shareOne = async (id: string) => {
-    const q = quotations.find((x) => x.id === id);
+    const q = invoices.find((x) => x.id === id);
     if (!q) return;
     const code = await encodeDataURL(withLiveCompany(q, company));
     await navigator.clipboard.writeText(buildShareUrl(code));
@@ -146,29 +128,12 @@ export default function Quotations() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight">Quotations</h1>
-          <p className="text-sm text-muted-foreground">{quotations.length} total</p>
+          <h1 className="text-2xl font-extrabold tracking-tight">Billing / Tax Invoices</h1>
+          <p className="text-sm text-muted-foreground">{invoices.length} total</p>
         </div>
         <div className="flex items-center gap-2">
-          {selected.size > 0 ? (
-            <>
-              <span className="text-xs text-muted-foreground">{selected.size} selected</span>
-              <Button size="sm" variant="outline" onClick={bulkPdf}>
-                <FileDown className="h-3.5 w-3.5" /> Bulk PDF
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setSelected(new Set())}>
-                Clear
-              </Button>
-            </>
-          ) : null}
-          <Button size="sm" variant="outline" onClick={exportListCsv}>
-            <Download className="h-3.5 w-3.5" /> CSV
-          </Button>
-          <Button size="sm" variant="outline" onClick={exportListExcel}>
-            <FileSpreadsheet className="h-3.5 w-3.5" /> Excel
-          </Button>
-          <Button size="sm" onClick={() => { const id = useStore.getState().createBlank(); navigate(`/editor/${id}`); }} className="gap-1.5">
-            <Plus className="h-3.5 w-3.5" /> New
+          <Button size="sm" onClick={() => { const id = useStore.getState().createBlankInvoice(); navigate(`/editor/${id}`); }} className="gap-1.5">
+            <Plus className="h-3.5 w-3.5" /> New Tax Invoice
           </Button>
         </div>
       </div>
@@ -176,7 +141,7 @@ export default function Quotations() {
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[220px] flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search quote no, PO no, customer, item…" className="pl-8" />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search invoice no, PO no, customer, item…" className="pl-8" />
         </div>
         <div className="flex items-center gap-1.5">
           <Filter className="h-4 w-4 text-muted-foreground" />
@@ -197,14 +162,16 @@ export default function Quotations() {
         <Card className="glass">
           <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-              <FileText className="h-7 w-7" />
+              <ReceiptText className="h-7 w-7" />
             </div>
-            <p className="text-sm font-medium">No quotations match</p>
+            <p className="text-sm font-medium">No tax invoices yet</p>
             <p className="max-w-sm text-xs text-muted-foreground">
-              {quotations.length === 0 ? 'Upload a Purchase Order to get started.' : 'Try a different search or filter.'}
+              Create a new Tax Invoice, or convert an existing quotation into a bill.
             </p>
-            {quotations.length === 0 ? (
-              <Button onClick={() => navigate('/upload')} className="mt-1">Upload a PO</Button>
+            {invoices.length === 0 ? (
+              <Button onClick={() => { const id = useStore.getState().createBlankInvoice(); navigate(`/editor/${id}`); }} className="mt-1">
+                New Tax Invoice
+              </Button>
             ) : null}
           </CardContent>
         </Card>
@@ -220,9 +187,9 @@ export default function Quotations() {
                         {selected.size === filtered.length && filtered.length > 0 ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
                       </button>
                     </th>
-                    <th className="p-3">Quotation No</th>
+                    <th className="p-3">Invoice No</th>
                     <th className="p-3">Customer</th>
-                    <th className="p-3">PO No</th>
+                    <th className="p-3">Copy Type</th>
                     <th className="p-3 text-right">Amount</th>
                     <th className="p-3">Date</th>
                     <th className="p-3">Status</th>
@@ -246,14 +213,18 @@ export default function Quotations() {
                             {selected.has(q.id) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
                           </button>
                         </td>
-                        <td className="p-3 font-semibold">{q.details.quoteNo}</td>
+                        <td className="p-3 font-semibold">{invoiceLabel(q)}</td>
                         <td className="max-w-[180px] truncate p-3">
                           <div className="truncate font-medium">{q.customer.company || q.customer.name || '—'}</div>
                           <div className="truncate text-[11px] text-muted-foreground">{q.customer.gstin}</div>
                         </td>
-                        <td className="p-3 text-muted-foreground">{q.details.poNumber || '—'}</td>
+                        <td className="p-3 text-muted-foreground">
+                          {q.invoice?.copyType ? <span className="text-[11px]">{q.invoice.copyType}</span> : '—'}
+                        </td>
                         <td className="p-3 text-right font-semibold">{formatMoney(t.rounded)}</td>
-                        <td className="p-3 text-muted-foreground">{formatDate(q.details.quoteDate)}</td>
+                        <td className="p-3 text-muted-foreground">
+                          {q.invoice?.invoiceDate ? formatDate(q.invoice.invoiceDate) : formatDate(q.details.quoteDate)}
+                        </td>
                         <td className="p-3">
                           <Badge variant={q.status === 'final' ? 'success' : 'warning'} className="capitalize">{q.status}</Badge>
                         </td>
@@ -269,6 +240,9 @@ export default function Quotations() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-52">
+                                <DropdownMenuItem onClick={() => void pdfOne(q.id)}>
+                                  <FileText className="h-4 w-4" /> Download PDF
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => duplicateAndGo(q.id)}>
                                   <Copy className="h-4 w-4" /> Duplicate
                                 </DropdownMenuItem>
@@ -299,7 +273,7 @@ export default function Quotations() {
       <Dialog open={deleteId != null} onOpenChange={(o) => !o && setDeleteId(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete quotation?</DialogTitle>
+            <DialogTitle>Delete tax invoice?</DialogTitle>
             <DialogDescription>This action cannot be undone.</DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
@@ -309,7 +283,7 @@ export default function Quotations() {
               onClick={() => {
                 if (deleteId) remove(deleteId);
                 setDeleteId(null);
-                toast.success('Quotation deleted');
+                toast.success('Tax invoice deleted');
               }}
             >
               <Trash2 className="h-4 w-4" /> Delete
@@ -321,7 +295,7 @@ export default function Quotations() {
       <Dialog open={renameTarget != null} onOpenChange={(o) => !o && setRenameTarget(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Rename quotation</DialogTitle>
+            <DialogTitle>Rename tax invoice</DialogTitle>
           </DialogHeader>
           <Input
             value={renameTarget?.title ?? ''}

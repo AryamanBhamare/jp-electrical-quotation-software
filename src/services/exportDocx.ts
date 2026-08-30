@@ -65,10 +65,11 @@ function cell(text: string, opts: { bold?: boolean; align?: DocxAlign; width?: s
   });
 }
 
-function cellMulti(texts: string[], opts: { bold?: boolean; align?: DocxAlign; width?: string; size?: number } = {}): TableCell {
+function cellMulti(texts: string[], opts: { bold?: boolean; align?: DocxAlign; width?: string; size?: number; bg?: string } = {}): TableCell {
   return new TableCell({
     width: opts.width ? { size: parseFloat(opts.width), type: WidthType.PERCENTAGE } : undefined,
     verticalAlign: VerticalAlign.CENTER,
+    shading: opts.bg ? { type: 'clear', fill: opts.bg } : undefined,
     margins: { top: 80, bottom: 80, left: 100, right: 100 },
     children: texts.map(
       (t) =>
@@ -89,6 +90,15 @@ const BORDER_SOFT = {
   insideVertical: { style: BorderStyle.SINGLE, size: 4, color: 'd1d5db' },
 };
 
+const BORDER_MINIMAL = {
+  top: { style: BorderStyle.SINGLE, size: 6, color: '111827' },
+  bottom: { style: BorderStyle.SINGLE, size: 6, color: '111827' },
+  left: { style: BorderStyle.NONE, size: 0 },
+  right: { style: BorderStyle.NONE, size: 0 },
+  insideHorizontal: { style: BorderStyle.NONE, size: 0 },
+  insideVertical: { style: BorderStyle.NONE, size: 0 },
+};
+
 const BORDER_NONE = {
   top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
   bottom: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
@@ -106,13 +116,16 @@ export async function buildDocx(q: Quotation, template: QuoteTemplate): Promise<
 
   const companyLine = `${q.company.titlePrefix ? `${q.company.titlePrefix} ` : ''}${q.company.name || ''}`;
   const contactLine = [q.company.contactPerson, q.company.phone].filter(Boolean).join(' | ');
+  const isInvoice = q.docType === 'invoice';
+  const inv = q.invoice ?? null;
 
-  // ── Header (2-column: company left · quote no/date right) ──
+  // ── Header (2-column: company · quote no/date, alignment-aware) ──
+  const centered = template.headerAlign === 'center';
   const headerChildren: (Paragraph | Table)[] = [];
   if (q.showLogo && q.company.logo) {
     headerChildren.push(
       new Paragraph({
-        alignment: AlignmentType.LEFT,
+        alignment: centered ? AlignmentType.CENTER : AlignmentType.LEFT,
         children: [
           new ImageRun({
             data: dataUrlToUint8(q.company.logo),
@@ -125,31 +138,69 @@ export async function buildDocx(q: Quotation, template: QuoteTemplate): Promise<
     );
   }
 
+  const headAlign = centered ? AlignmentType.CENTER : undefined;
   const leftCells: Paragraph[] = [
-    para(run(companyLine, { bold: true, size: 52 }), { after: 40 }),
+    para(run(companyLine, { bold: true, size: 52 }), { align: headAlign, after: 40 }),
   ];
-  if (q.company.email) leftCells.push(para(run(`Email: ${q.company.email}`, { size: 20, color: '374151' }), { after: 20 }));
-  if (q.company.businessDesc) leftCells.push(para(run(q.company.businessDesc, { bold: true, size: 20 }), { after: 20 }));
-  if (q.company.address) leftCells.push(para(run(q.company.address, { size: 20, color: '374151' }), { after: 20 }));
-  if (contactLine) leftCells.push(para(run(`Contact: ${contactLine}`, { size: 20, color: '374151' }), { after: 0 }));
+  if (q.company.email) leftCells.push(para(run(`Email: ${q.company.email}`, { size: 20, color: '374151' }), { align: headAlign, after: 20 }));
+  if (q.company.businessDesc) leftCells.push(para(run(q.company.businessDesc, { bold: true, size: 20 }), { align: headAlign, after: 20 }));
+  if (q.company.address) leftCells.push(para(run(q.company.address, { size: 20, color: '374151' }), { align: headAlign, after: 20 }));
+  if (contactLine) leftCells.push(para(run(`Contact: ${contactLine}`, { size: 20, color: '374151' }), { align: headAlign, after: 0 }));
+  const taxLine = [
+    q.company.gstin ? `GSTIN: ${q.company.gstin}` : '',
+    q.company.pan ? `PAN: ${q.company.pan}` : '',
+  ].filter(Boolean).join('  |  ');
+  if (taxLine) leftCells.push(para(run(taxLine, { size: 20, color: '374151' }), { align: headAlign, before: 40, after: 0 }));
 
   const rightCells: Paragraph[] = [];
-  if (q.details.quoteNo) rightCells.push(para([run('Quotation No: ', { size: 20 }), run(q.details.quoteNo, { bold: true, size: 20 })], { align: AlignmentType.RIGHT, after: 20 }));
-  if (q.details.quoteDate) rightCells.push(para([run('Date: ', { size: 20 }), run(`DT.${formatDate(q.details.quoteDate)}`, { bold: true, size: 20 })], { align: AlignmentType.RIGHT, after: 0 }));
+  if (!isInvoice) {
+    if (q.details.quoteNo) rightCells.push(para([run('Quotation No: ', { size: 20 }), run(q.details.quoteNo, { bold: true, size: 20 })], { align: AlignmentType.RIGHT, after: 20 }));
+    if (q.details.quoteDate) rightCells.push(para([run('Date: ', { size: 20 }), run(`DT.${formatDate(q.details.quoteDate)}`, { bold: true, size: 20 })], { align: AlignmentType.RIGHT, after: 0 }));
+  }
+  const docNoLine = !isInvoice
+    ? [q.details.quoteNo ? `Quotation No: ${q.details.quoteNo}` : '', q.details.quoteDate ? `Date: DT.${formatDate(q.details.quoteDate)}` : '']
+        .filter(Boolean)
+        .join('      ')
+    : '';
 
   const headerTable = new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
     borders: BORDER_NONE,
     rows: [
       new TableRow({
-        children: [
-          new TableCell({ width: { size: 70, type: WidthType.PERCENTAGE }, margins: { top: 0, bottom: 0, left: 0, right: 0 }, children: leftCells }),
-          new TableCell({ width: { size: 30, type: WidthType.PERCENTAGE }, margins: { top: 0, bottom: 0, left: 0, right: 0 }, children: rightCells }),
-        ],
+        children: centered
+          ? [new TableCell({ width: { size: 100, type: WidthType.PERCENTAGE }, margins: { top: 0, bottom: 0, left: 0, right: 0 }, children: leftCells })]
+          : [
+              new TableCell({ width: { size: 70, type: WidthType.PERCENTAGE }, margins: { top: 0, bottom: 0, left: 0, right: 0 }, children: leftCells }),
+              new TableCell({ width: { size: 30, type: WidthType.PERCENTAGE }, margins: { top: 0, bottom: 0, left: 0, right: 0 }, children: rightCells }),
+            ],
       }),
     ],
   });
   headerChildren.push(headerTable);
+  if (centered && docNoLine) {
+    headerChildren.push(para(run(docNoLine, { bold: true, size: 20 }), { align: AlignmentType.CENTER, before: 120, after: 0 }));
+  }
+  if (isInvoice) {
+    headerChildren.push(para(run('TAX INVOICE', { bold: true, size: 32 }), { align: AlignmentType.CENTER, before: 160, after: 60 }));
+    if (inv?.copyType) {
+      headerChildren.push(
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          border: {
+            top: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+            bottom: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+            left: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+            right: { style: BorderStyle.SINGLE, size: 4, color: '000000' },
+          },
+          children: [run(inv.copyType, { bold: true, size: 20 })],
+          spacing: { before: 60, after: 60 },
+        }),
+      );
+    }
+    const posLine = '';
+    if (posLine) headerChildren.push(para(run(posLine, { size: 20, color: '374151' }), { before: 120, after: 0 }));
+  }
   headerChildren.push(para(run(''), { before: 40, after: 0 }));
 
   const footerChildren = [
@@ -166,7 +217,7 @@ export async function buildDocx(q: Quotation, template: QuoteTemplate): Promise<
   ];
 
   // ── Body ───────────────────────────────────────────────────
-  const body: Paragraph[] = [];
+  const body: (Paragraph | Table)[] = [];
   const customerContact = [
     q.customer.gstin ? `GSTIN: ${q.customer.gstin}` : '',
     q.customer.pan ? `PAN: ${q.customer.pan}` : '',
@@ -196,6 +247,7 @@ export async function buildDocx(q: Quotation, template: QuoteTemplate): Promise<
   }
 
   // ── Items table (6 columns) ────────────────────────────────
+  const ts = template.tableStyle ?? 'bordered';
   const headers = ['SR NO', 'DESCRIPTION', 'HSN CODE', 'QTY', 'PRICE', 'AMOUNT'];
   const widths = ['7', '44', '14', '9', '13', '13'];
   const aligns: DocxAlign[] = [AlignmentType.CENTER, AlignmentType.LEFT, AlignmentType.CENTER, AlignmentType.CENTER, AlignmentType.RIGHT, AlignmentType.RIGHT];
@@ -205,17 +257,19 @@ export async function buildDocx(q: Quotation, template: QuoteTemplate): Promise<
   });
 
   const bodyRows = q.items.map((it, i) => {
-    const descParts = [it.description];
+    const descParts: string[] = [];
+    if (it.description) descParts.push(...it.description.split('\n'));
     if (it.drawingNo || it.revision) descParts.push(`Drg No. ${it.drawingNo || '-'}, Rev No. ${it.revision || '-'}`);
     if (it.unit) descParts.push(`Unit: ${it.unit}`);
+    const zc = ts === 'zebra' && i % 2 === 1 ? '#f8fafc' : undefined;
     return new TableRow({
       children: [
-        cell(String(i + 1), { align: AlignmentType.CENTER, width: widths[0] }),
-        cellMulti(descParts.filter(Boolean), { width: widths[1] }),
-        cell(it.hsnCode, { align: AlignmentType.CENTER, width: widths[2] }),
-        cell(String(it.quantity ?? ''), { align: AlignmentType.CENTER, width: widths[3] }),
-        cell(it.rate ? formatNumber(it.rate) : '', { align: AlignmentType.RIGHT, width: widths[4] }),
-        cell(it.amount ? it.amount.toFixed(2) : '', { align: AlignmentType.RIGHT, width: widths[5] }),
+        cell(String(i + 1), { align: AlignmentType.CENTER, width: widths[0], bg: zc }),
+        cellMulti(descParts.filter(Boolean), { width: widths[1], bg: zc }),
+        cell(it.hsnCode, { align: AlignmentType.CENTER, width: widths[2], bg: zc }),
+        cell(String(it.quantity ?? ''), { align: AlignmentType.CENTER, width: widths[3], bg: zc }),
+        cell(it.rate ? formatNumber(it.rate) : '', { align: AlignmentType.RIGHT, width: widths[4], bg: zc }),
+        cell(it.amount ? it.amount.toFixed(2) : '', { align: AlignmentType.RIGHT, width: widths[5], bg: zc }),
       ],
     });
   });
@@ -224,9 +278,10 @@ export async function buildDocx(q: Quotation, template: QuoteTemplate): Promise<
     bodyRows.push(new TableRow({ children: headers.map((h, i) => cell('', { width: widths[i] })) }));
   }
 
+  const itemsBorders = ts === 'minimal' ? BORDER_MINIMAL : BORDER_SOFT;
   const itemsTable = new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
-    borders: BORDER_SOFT,
+    borders: itemsBorders,
     rows: [headerRow, ...bodyRows],
   });
 
@@ -251,7 +306,7 @@ export async function buildDocx(q: Quotation, template: QuoteTemplate): Promise<
   const totalsTable = new Table({
     width: { size: 55, type: WidthType.PERCENTAGE },
     alignment: AlignmentType.RIGHT,
-    borders: BORDER_SOFT,
+    borders: ts === 'minimal' ? BORDER_MINIMAL : BORDER_SOFT,
     rows: totalRows,
   });
 

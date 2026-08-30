@@ -1,12 +1,16 @@
 // Maps a parsed Purchase Order onto a fresh Quotation draft.
 import type { AppSettings, CompanyDetails, CustomerDetails, PoData, QuoteItem, Quotation } from '@shared/types';
-import { DEFAULT_GST, emptyCustomer, nullIfBlank } from '@shared/types';
+import { DEFAULT_GST, emptyCustomer, emptyInvoiceOptions, nullIfBlank } from '@shared/types';
 import { uid } from '@/lib/id';
 import { todayISO, toISOFromAny } from '@/lib/format';
 import { round2 } from '@/lib/calculations';
 
 export function nextQuoteNumber(prefix: string, year: string, seq: number): string {
   return `${prefix}-${year}-${String(seq).padStart(4, '0')}`;
+}
+
+export function nextInvoiceNumber(prefix: string, year: string, seq: number): string {
+  return `${prefix || 'INV'}-${year}-${String(seq).padStart(4, '0')}`;
 }
 
 export function buildQuotationFromPo(
@@ -109,6 +113,8 @@ export function buildQuotationFromPo(
     showQr: true,
     sourcePo: null,
     history: [],
+    docType: 'quotation',
+    invoice: null,
   };
 }
 
@@ -154,11 +160,88 @@ export function buildBlankQuotation(quoteNo: string, company: CompanyDetails, se
     showQr: true,
     sourcePo: null,
     history: [],
+    docType: 'quotation',
+    invoice: null,
   };
+}
+
+export function buildBlankInvoice(company: CompanyDetails, settings: AppSettings): Quotation {
+  const now = new Date().toISOString();
+  const seq = settings.invoiceSeq + 1;
+  const invoiceNo = nextInvoiceNumber(settings.invoicePrefix, settings.quoteYear, seq);
+  const invoice = emptyInvoiceOptions();
+  invoice.invoiceNo = invoiceNo;
+  invoice.placeOfSupply = company.state ?? '';
+  invoice.stateCode = company.stateCode ?? '';
+  const q: Quotation = buildBlankQuotation(invoiceNo, company, settings);
+  q.title = `Tax Invoice ${invoiceNo}`;
+  q.details.quoteNo = invoiceNo;
+  q.docType = 'invoice';
+  q.invoice = invoice;
+  return q;
+}
+
+/**
+ * Duplicates an existing quotation as a new Tax Invoice (same company, customer,
+ * items, tax and terms) with a fresh invoice number — "Convert quotation to bill".
+ */
+export function buildInvoiceFromQuotation(source: Quotation, company: CompanyDetails, settings: AppSettings): Quotation {
+  const now = new Date().toISOString();
+  const seq = settings.invoiceSeq + 1;
+  const invoiceNo = nextInvoiceNumber(settings.invoicePrefix, settings.quoteYear, seq);
+  const q = JSON.parse(JSON.stringify(source)) as Quotation;
+  q.id = uid('q');
+  q.title = `Tax Invoice ${invoiceNo}`;
+  q.status = 'draft';
+  q.version = 1;
+  q.createdAt = now;
+  q.updatedAt = now;
+  q.templateId = 'default';
+  q.company = JSON.parse(JSON.stringify(company)) as CompanyDetails;
+  q.details = { ...q.details, quoteNo: invoiceNo, quoteDate: todayISO() };
+  q.docType = 'invoice';
+  q.invoice = {
+    ...emptyInvoiceOptions(),
+    invoiceNo,
+    placeOfSupply: company.state ?? '',
+    stateCode: company.stateCode ?? '',
+  };
+  q.history = [];
+  return q;
 }
 
 export function emptyItem(srNo: number): QuoteItem {
   return { id: uid('it'), srNo, description: '', hsnCode: '', drawingNo: '', revision: '', unit: 'Nos', quantity: 0, rate: 0, amount: 0 };
+}
+
+/**
+ * Returns a copy of the quotation whose EMPTY company fields are filled from the
+ * live (Settings) company profile. Explicit per-quote values win over the profile;
+ * only blanks ('' / null) are backfilled — so GSTIN/PAN/logo/signature entered in
+ * Settings appear on quotations created before they were added.
+ */
+export function withLiveCompany(q: Quotation, live: CompanyDetails): Quotation {
+  const c = JSON.parse(JSON.stringify(q.company)) as CompanyDetails;
+  const p = JSON.parse(JSON.stringify(live)) as CompanyDetails;
+  const blank = (v: unknown) => v === null || v === undefined || v === '';
+  const out: Record<string, unknown> = { ...c };
+  for (const key of Object.keys(p) as (keyof CompanyDetails)[]) {
+    const cv = c[key];
+    const pv = p[key];
+    if (typeof pv === 'object' && pv !== null) {
+      const cur = (typeof cv === 'object' && cv !== null ? cv : {}) as Record<string, unknown>;
+      const merged: Record<string, unknown> = { ...cur };
+      for (const k of Object.keys(pv)) {
+        if (blank(cur[k]) && !blank((pv as Record<string, unknown>)[k])) {
+          merged[k] = (pv as Record<string, unknown>)[k];
+        }
+      }
+      out[key] = merged;
+    } else if (blank(cv) && !blank(pv)) {
+      out[key] = pv as string;
+    }
+  }
+  return { ...q, company: out as unknown as CompanyDetails };
 }
 
 interface PoItemLike {

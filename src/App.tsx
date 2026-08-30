@@ -10,6 +10,7 @@ const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const Upload = lazy(() => import('@/pages/Upload'));
 const Editor = lazy(() => import('@/pages/Editor'));
 const Quotations = lazy(() => import('@/pages/Quotations'));
+const Invoices = lazy(() => import('@/pages/Invoices'));
 const Customers = lazy(() => import('@/pages/Customers'));
 const Templates = lazy(() => import('@/pages/Templates'));
 const Analytics = lazy(() => import('@/pages/Analytics'));
@@ -67,6 +68,14 @@ export default function App() {
               element={
                 <Suspense fallback={<PageFallback />}>
                   <Quotations />
+                </Suspense>
+              }
+            />
+            <Route
+              path="invoices"
+              element={
+                <Suspense fallback={<PageFallback />}>
+                  <Invoices />
                 </Suspense>
               }
             />

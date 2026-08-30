@@ -6,19 +6,16 @@ function applyTheme(theme: 'light' | 'dark' | 'system') {
   const dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   root.classList.toggle('dark', dark);
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', dark ? '#020617' : '#ffffff');
+  if (meta) meta.setAttribute('content', dark ? '#171717' : '#ffffff');
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const theme = useStore((s) => s.settings.theme);
+  const effectiveTheme: 'light' | 'dark' = theme === 'dark' ? 'dark' : 'light';
 
   useEffect(() => {
-    applyTheme(theme);
-    const mql = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = () => applyTheme(theme);
-    if (theme === 'system') mql.addEventListener('change', handler);
-    return () => mql.removeEventListener('change', handler);
-  }, [theme]);
+    applyTheme(effectiveTheme);
+  }, [effectiveTheme]);
 
   return <>{children}</>;
 }

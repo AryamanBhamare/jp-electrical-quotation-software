@@ -67,6 +67,17 @@ function TemplateEditor({
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-1.5">
+            <Label>Table style</Label>
+            <Select value={template.tableStyle ?? 'bordered'} onValueChange={(v) => set({ tableStyle: v as 'bordered' | 'zebra' | 'minimal' })}>
+              <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="bordered" className="text-xs">Bordered (classic)</SelectItem>
+                <SelectItem value="zebra" className="text-xs">Zebra stripes</SelectItem>
+                <SelectItem value="minimal" className="text-xs">Minimal (lines only)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         <div className="space-y-1.5">
@@ -140,7 +151,7 @@ function TemplateMiniPreview({ template }: { template: QuoteTemplate }) {
   return (
     <div className="space-y-2">
       <Label className="text-xs text-muted-foreground">Live preview</Label>
-      <div className="scrollbar-thin max-h-[560px] overflow-auto rounded-xl border bg-slate-100 p-4 dark:bg-slate-950/40">
+      <div className="scrollbar-thin max-h-[560px] overflow-auto rounded-xl border bg-slate-100 p-4 dark:bg-neutral-950/40">
         <div className="mx-auto w-[220mm] max-w-full bg-white p-6 text-[12px] shadow" style={{ color: '#111827', fontFamily: template.font === 'serif' ? 'Georgia, serif' : 'Inter, sans-serif' }}>
           <div className="flex items-start justify-between">
             <div>
@@ -164,13 +175,13 @@ function TemplateMiniPreview({ template }: { template: QuoteTemplate }) {
             </thead>
             <tbody>
               {['HT Panel 63A', 'Busbar 32x5mm', 'Lugs & Accessories'].map((d, i) => (
-                <tr key={d}>
-                  <td className="border border-slate-300 px-1.5 py-1">{i + 1}</td>
-                  <td className="border border-slate-300 px-1.5 py-1">{d}</td>
-                  <td className="border border-slate-300 px-1.5 py-1">8537</td>
-                  <td className="border border-slate-300 px-1.5 py-1 text-right">2</td>
-                  <td className="border border-slate-300 px-1.5 py-1 text-right">12,500</td>
-                  <td className="border border-slate-300 px-1.5 py-1 text-right">25,000</td>
+                <tr key={d} style={template.tableStyle === 'zebra' && i % 2 === 1 ? { background: '#f8fafc' } : undefined}>
+                  <td className={template.tableStyle === 'minimal' ? 'border-y border-slate-300 px-1.5 py-1' : 'border border-slate-300 px-1.5 py-1'}>{i + 1}</td>
+                  <td className={template.tableStyle === 'minimal' ? 'border-y border-slate-300 px-1.5 py-1' : 'border border-slate-300 px-1.5 py-1'}>{d}</td>
+                  <td className={template.tableStyle === 'minimal' ? 'border-y border-slate-300 px-1.5 py-1' : 'border border-slate-300 px-1.5 py-1'}>8537</td>
+                  <td className={template.tableStyle === 'minimal' ? 'border-y border-slate-300 px-1.5 py-1 text-right' : 'border border-slate-300 px-1.5 py-1 text-right'}>2</td>
+                  <td className={template.tableStyle === 'minimal' ? 'border-y border-slate-300 px-1.5 py-1 text-right' : 'border border-slate-300 px-1.5 py-1 text-right'}>12,500</td>
+                  <td className={template.tableStyle === 'minimal' ? 'border-y border-slate-300 px-1.5 py-1 text-right' : 'border border-slate-300 px-1.5 py-1 text-right'}>25,000</td>
                 </tr>
               ))}
             </tbody>
@@ -233,6 +244,7 @@ export default function Templates() {
               pageMargin: 28,
               bodyFontSize: 13,
               tableHeaderBg: '#e0f2fe',
+              tableStyle: 'bordered',
             };
             addTemplate(t);
             setEditing(t);

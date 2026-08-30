@@ -74,11 +74,20 @@ const QuoteDocument = forwardRef<HTMLDivElement, Props>(({ quote, template, clas
     ? `upi://pay?pa=${encodeURIComponent(upi)}&pn=${encodeURIComponent(quote.company.name)}&am=${totals.rounded}&cu=INR`
     : null;
 
-  const td = 'border border-slate-500 px-1.5 py-1 align-middle';
+  const ts = template.tableStyle ?? 'bordered';
+  const tdBorder = ts === 'minimal' ? 'border-y border-slate-300' : 'border border-slate-400';
+  const td = `${tdBorder} px-1.5 py-1 align-middle`;
   const th = `${td} font-semibold text-[10.5px]`;
+  const rowBg = (i: number) => (ts === 'zebra' ? (i % 2 === 1 ? '#f8fafc' : '#ffffff') : undefined);
 
   const companyNameLine = `${quote.company.titlePrefix ? `${quote.company.titlePrefix} ` : ''}${quote.company.name}`;
   const contactLine = [quote.company.contactPerson, quote.company.phone].filter(Boolean).join(' | ');
+  const companyTaxLine = [
+    quote.company.gstin ? `GSTIN: ${quote.company.gstin}` : '',
+    quote.company.pan ? `PAN: ${quote.company.pan}` : '',
+  ].filter(Boolean).join('  |  ');
+  const isInvoice = quote.docType === 'invoice';
+  const inv = quote.invoice ?? null;
   const customerContact = [
     quote.customer.gstin ? `GSTIN: ${quote.customer.gstin}` : '',
     quote.customer.pan ? `PAN: ${quote.customer.pan}` : '',
@@ -87,6 +96,14 @@ const QuoteDocument = forwardRef<HTMLDivElement, Props>(({ quote, template, clas
   ].filter(Boolean).join('  |  ');
   const customerCityLine = [quote.customer.city, quote.customer.state].filter(Boolean).join(', ');
   const hasPo = Boolean(quote.details.poNumber);
+
+  const invoiceRow = (label: string, value: string) =>
+    value ? (
+      <tr>
+        <td className="border border-black bg-slate-100 px-2 py-1 font-semibold">{label}</td>
+        <td className="border border-black px-2 py-1 text-right">{value}</td>
+      </tr>
+    ) : null;
 
   return (
     <div
@@ -106,9 +123,9 @@ const QuoteDocument = forwardRef<HTMLDivElement, Props>(({ quote, template, clas
         </div>
       ) : null}
 
-      {/* ── HEADER: company (left) · quotation no/date (right) ── */}
-      <header className="relative flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
+      {/* ── HEADER: company (left/center) · quotation no/date ── */}
+      <header className={template.headerAlign === 'center' ? 'relative flex flex-col items-center text-center' : 'relative flex items-start justify-between gap-4'}>
+        <div className={template.headerAlign === 'center' ? 'flex flex-col items-center gap-1' : 'flex items-start gap-3'}>
           <CompanyLogo quote={quote} template={template} />
           <div>
             <div className="text-[15px] font-extrabold uppercase leading-tight" style={{ color: '#000' }}>
@@ -126,41 +143,116 @@ const QuoteDocument = forwardRef<HTMLDivElement, Props>(({ quote, template, clas
             {contactLine ? (
               <div className="text-[10px]">Contact: {contactLine}</div>
             ) : null}
+            {companyTaxLine ? (
+              <div className="mt-0.5 text-[10px]">{companyTaxLine}</div>
+            ) : null}
           </div>
         </div>
-        <div className="text-right text-[10px]" style={{ color: '#000' }}>
-          {quote.details.quoteNo ? (
-            <div>
-              Quotation No: <span className="font-semibold">{quote.details.quoteNo}</span>
-            </div>
-          ) : null}
-          {quote.details.quoteDate ? (
-            <div>
-              Date: <span className="font-semibold">DT.{formatDate(quote.details.quoteDate)}</span>
+        <div className="text-[10px]" style={{ color: '#000' }}>
+          {!isInvoice ? (
+            <div className={template.headerAlign === 'center' ? 'mt-1 flex items-center justify-center gap-4' : 'text-right'}>
+              {quote.details.quoteNo ? (
+                <span>
+                  Quotation No: <span className="font-semibold">{quote.details.quoteNo}</span>
+                </span>
+              ) : null}
+              {quote.details.quoteDate ? (
+                <span>
+                  Date: <span className="font-semibold">DT.{formatDate(quote.details.quoteDate)}</span>
+                </span>
+              ) : null}
             </div>
           ) : null}
         </div>
       </header>
 
+      {/* TAX INVOICE title */}
+      {isInvoice ? (
+        <div className="mt-2 text-center text-[14px] font-extrabold uppercase tracking-wide" style={{ color: '#000' }}>
+          Tax Invoice
+        </div>
+      ) : null}
+
       {/* divider */}
       <div className="mt-3 h-px w-full" style={{ background: template.showHeaderBorder ? '#000' : '#94a3b8' }} />
 
-      {/* ── CUSTOMER ── */}
-      <div className="mt-4 text-[11px]">
-        <div className="font-semibold">To,</div>
-        {quote.customer.attention ? <div className="font-semibold">{quote.customer.attention}</div> : null}
-        {quote.customer.company || quote.customer.name ? (
-          <div className="text-[12px] font-bold">{quote.customer.company || quote.customer.name}</div>
-        ) : null}
-        {quote.customer.address ? <div className="whitespace-pre-line">{quote.customer.address}</div> : null}
-        {customerCityLine || quote.customer.pincode ? (
-          <div>
-            {customerCityLine}
-            {quote.customer.pincode ? `${customerCityLine ? ', ' : ''}${quote.customer.pincode}` : ''}
+      {/* copy-type band (invoice) */}
+      {isInvoice && inv?.copyType ? (
+        <div className="mt-2 flex justify-center">
+          <div className="inline-block border border-black px-4 py-0.5 text-[10px] font-bold uppercase tracking-widest">
+            {inv.copyType}
           </div>
-        ) : null}
-        {customerContact ? <div className="mt-0.5">{customerContact}</div> : null}
-      </div>
+        </div>
+      ) : null}
+
+      {/* ── BILL TO (left) · INVOICE DETAILS (right) ── */}
+      {isInvoice ? (
+        <div className="mt-4 grid grid-cols-2 gap-5 text-[11px]">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#6b7280' }}>Bill To</div>
+            {quote.customer.attention ? <div className="mt-1 font-semibold">{quote.customer.attention}</div> : null}
+            {quote.customer.company || quote.customer.name ? (
+              <div className="text-[12px] font-bold">{quote.customer.company || quote.customer.name}</div>
+            ) : null}
+            {quote.customer.address ? <div className="whitespace-pre-line">{quote.customer.address}</div> : null}
+            {customerCityLine || quote.customer.pincode ? (
+              <div>
+                {customerCityLine}
+                {quote.customer.pincode ? `${customerCityLine ? ', ' : ''}${quote.customer.pincode}` : ''}
+              </div>
+            ) : null}
+            <div className="mt-1">
+              {quote.customer.gstin ? (
+                <div>
+                  GSTIN: <span className="font-semibold">{quote.customer.gstin}</span>
+                </div>
+              ) : null}
+              {quote.customer.pan ? (
+                <div>
+                  PAN: <span className="font-semibold">{quote.customer.pan}</span>
+                </div>
+              ) : null}
+              {(quote.customer.phone || quote.customer.email) ? (
+                <div className="text-[10.5px]" style={{ color: '#374151' }}>
+                  {[quote.customer.phone, quote.customer.email].filter(Boolean).join('  ·  ')}
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div>
+            <table className="w-full border-collapse text-[11px]" style={{ color: '#000' }}>
+              <tbody>
+                {invoiceRow('Invoice No.', inv?.invoiceNo ?? '')}
+                {invoiceRow('Invoice Date', inv?.invoiceDate ? formatDate(inv.invoiceDate) : '')}
+                {invoiceRow('Ref / P.O. No', quote.details.poNumber || quote.details.reference || '')}
+                {invoiceRow('P.O. Date', quote.details.poDate ? formatDate(quote.details.poDate) : '')}
+                {invoiceRow(
+                  'Place of Supply',
+                  inv?.placeOfSupply ? `${inv.placeOfSupply}${inv.stateCode ? ` (${inv.stateCode})` : ''}` : '',
+                )}
+                {invoiceRow('IRN', inv?.irn ?? '')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* ── CUSTOMER (quotation) ── */
+        <div className="mt-4 text-[11px]">
+          <div className="font-semibold">To,</div>
+          {quote.customer.attention ? <div className="font-semibold">{quote.customer.attention}</div> : null}
+          {quote.customer.company || quote.customer.name ? (
+            <div className="text-[12px] font-bold">{quote.customer.company || quote.customer.name}</div>
+          ) : null}
+          {quote.customer.address ? <div className="whitespace-pre-line">{quote.customer.address}</div> : null}
+          {customerCityLine || quote.customer.pincode ? (
+            <div>
+              {customerCityLine}
+              {quote.customer.pincode ? `${customerCityLine ? ', ' : ''}${quote.customer.pincode}` : ''}
+            </div>
+          ) : null}
+          {customerContact ? <div className="mt-0.5">{customerContact}</div> : null}
+        </div>
+      )}
 
       {/* ── SUBJECT ── */}
       {quote.details.subject ? (
@@ -170,7 +262,7 @@ const QuoteDocument = forwardRef<HTMLDivElement, Props>(({ quote, template, clas
       ) : null}
 
       {/* ── REFERENCE ── */}
-      {hasPo || quote.details.reference ? (
+      {!isInvoice && (hasPo || quote.details.reference) ? (
         <div className="mt-1 text-[11px]">
           <span className="font-bold">REF:</span>{' '}
           {hasPo ? `YOUR P.ORDER NO. ${quote.details.poNumber}` : quote.details.reference || ''}
@@ -209,10 +301,10 @@ const QuoteDocument = forwardRef<HTMLDivElement, Props>(({ quote, template, clas
             </tr>
           ) : (
             quote.items.map((it, i) => (
-              <tr key={it.id} className="print-avoid-break">
+              <tr key={it.id} className="print-avoid-break" style={{ background: rowBg(i) }}>
                 <td className={td} style={{ textAlign: 'center' }}>{i + 1}</td>
                 <td className={td}>
-                  {it.description}
+                  <div className="whitespace-pre-line">{it.description}</div>
                   {it.drawingNo || it.revision ? (
                     <div className="text-[9.5px]" style={{ color: '#374151' }}>
                       Drg No. {it.drawingNo || '-'}, Rev No. {it.revision || '-'}

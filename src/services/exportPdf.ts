@@ -53,6 +53,8 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
 
   const companyLine = `${q.company.titlePrefix ? `${q.company.titlePrefix} ` : ''}${q.company.name || 'Company'}`;
   const contactLine = [q.company.contactPerson, q.company.phone].filter(Boolean).join(' | ');
+  const isInvoice = q.docType === 'invoice';
+  const inv = q.invoice ?? null;
 
   // ── Header: company (left) · quotation no/date (right) ─────
   let y = margin;
@@ -67,96 +69,213 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     y += h + 3;
   }
 
+  const centered = template.headerAlign === 'center';
+  const headX = centered ? pageW / 2 : margin;
+  const headAlignOpt = centered ? ({ align: 'center' } as const) : {};
+
   doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 0, 0);
   const nameLines = doc.splitTextToSize(companyLine, usable * 0.62);
-  doc.text(nameLines, margin, y);
+  doc.text(nameLines, headX, y, headAlignOpt);
   y += nameLines.length * 4.6 + 1.2;
 
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(0, 0, 0);
+  const taxLine = [
+    q.company.gstin ? `GSTIN: ${q.company.gstin}` : '',
+    q.company.pan ? `PAN: ${q.company.pan}` : '',
+  ].filter(Boolean).join('  |  ');
   const headerLeft = [
     q.company.email ? `Email: ${q.company.email}` : '',
     q.company.businessDesc || '',
     q.company.address || '',
     contactLine ? `Contact: ${contactLine}` : '',
+    taxLine,
   ].filter(Boolean);
   for (const line of headerLeft) {
     const wrapped = doc.splitTextToSize(line, usable * 0.62);
-    doc.text(wrapped, margin, y);
+    doc.text(wrapped, headX, y, headAlignOpt);
     y += wrapped.length * 3.8;
   }
 
-  // right column (quotation no / date)
-  let rightY = margin + 3;
-  doc.setFontSize(8.5);
-  doc.setTextColor(0, 0, 0);
-  if (q.details.quoteNo) {
-    doc.setFont('helvetica', 'normal');
-    doc.text('Quotation No: ', pageW - margin, rightY, { align: 'right' });
-    const w = doc.getTextWidth('Quotation No: ');
-    doc.setFont('helvetica', 'bold');
-    doc.text(q.details.quoteNo, pageW - margin - w, rightY, { align: 'right' });
-    rightY += 4.2;
+  const docNoLines = !isInvoice
+    ? [
+        q.details.quoteNo ? `Quotation No: ${q.details.quoteNo}` : '',
+        q.details.quoteDate ? `Date: DT.${formatDate(q.details.quoteDate)}` : '',
+      ].filter(Boolean)
+    : [];
+
+  if (centered) {
+    if (docNoLines.length) {
+      doc.setFontSize(8.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(0, 0, 0);
+      const joined = docNoLines.join('    ');
+      const wrapped = doc.splitTextToSize(joined, usable * 0.7);
+      doc.text(wrapped, headX, y, headAlignOpt);
+      y += wrapped.length * 4.2;
+    }
+  } else if (docNoLines.length) {
+    let rightY = margin + 3;
+    doc.setFontSize(8.5);
+    doc.setTextColor(0, 0, 0);
+    for (const l of docNoLines) {
+      const idx = l.indexOf(': ');
+      const label = l.slice(0, idx < 0 ? l.length : idx + 2);
+      const value = idx < 0 ? '' : l.slice(idx + 2);
+      doc.setFont('helvetica', 'normal');
+      const w = doc.getTextWidth(label);
+      doc.text(label, pageW - margin - (value ? doc.getTextWidth(value) : 0), rightY, { align: 'right' });
+      doc.setFont('helvetica', 'bold');
+      doc.text(value, pageW - margin, rightY, { align: 'right' });
+      rightY += 4.2;
+    }
+    y = Math.max(y, rightY) + 3;
   }
-  if (q.details.quoteDate) {
-    doc.setFont('helvetica', 'normal');
-    doc.text('Date: ', pageW - margin, rightY, { align: 'right' });
-    const w = doc.getTextWidth('Date: ');
-    doc.setFont('helvetica', 'bold');
-    doc.text(`DT.${formatDate(q.details.quoteDate)}`, pageW - margin - w, rightY, { align: 'right' });
-  }
-  y = Math.max(y, rightY) + 3;
 
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.35);
   doc.line(margin, y, pageW - margin, y);
   y += 5;
 
-  // ── Customer ───────────────────────────────────────────────
-  doc.setFontSize(8.5);
-  doc.setTextColor(0, 0, 0);
-  doc.setFont('helvetica', 'bold');
-  doc.text('To,', margin, y);
-  y += 4;
-  if (q.customer.attention) {
-    doc.text(q.customer.attention, margin, y);
-    y += 4;
-  }
-  if (q.customer.company || q.customer.name) {
-    doc.setFontSize(9.5);
-    doc.text(doc.splitTextToSize(q.customer.company || q.customer.name, usable), margin, y);
-    y += 4.4;
-  }
-  doc.setFontSize(8.5);
-  doc.setFont('helvetica', 'normal');
-  if (q.customer.address) {
-    for (const line of q.customer.address.split('\n').filter(Boolean)) {
-      doc.text(doc.splitTextToSize(line, usable), margin, y);
-      y += 4;
+  // ── TAX INVOICE title + copy type band + POS/IRN (invoice) ──
+  if (isInvoice) {
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text('TAX INVOICE', pageW / 2, y, { align: 'center' });
+    y += 5.5;
+    if (inv?.copyType) {
+      doc.setFontSize(8.5);
+      const bw = doc.getTextWidth(inv.copyType) + 12;
+      const bx = (pageW - bw) / 2;
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.3);
+      doc.rect(bx, y - 4, bw, 5.2);
+      doc.text(inv.copyType, pageW / 2, y, { align: 'center' });
+      y += 5.6;
     }
   }
-  const cityLine = [q.customer.city, q.customer.state].filter(Boolean).join(', ');
-  const cityFull = [cityLine, q.customer.pincode].filter(Boolean).join(', ');
-  if (cityFull) {
-    doc.text(cityFull, margin, y);
-    y += 4;
-  }
-  const custContact = [
-    q.customer.gstin ? `GSTIN: ${q.customer.gstin}` : '',
-    q.customer.pan ? `PAN: ${q.customer.pan}` : '',
-    q.customer.phone ? `Ph: ${q.customer.phone}` : '',
-    q.customer.email ? `Email: ${q.customer.email}` : '',
-  ].filter(Boolean).join('  |  ');
-  if (custContact) {
+
+  const customerStartY = y;
+
+  // ── Invoice: Bill To (left) · Invoice details (right) ─────
+  if (isInvoice) {
+    const leftW = usable * 0.5;
+    const rightX = margin + usable * 0.52;
+    const rightW = usable * 0.46;
+
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...SUB);
+    doc.text('Billing To', margin, y);
+    y += 4.4;
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    if (q.customer.attention) {
+      doc.text(q.customer.attention, margin, y);
+      y += 4;
+    }
+    if (q.customer.company || q.customer.name) {
+      doc.setFontSize(9.5);
+      doc.text(doc.splitTextToSize(q.customer.company || q.customer.name, leftW), margin, y);
+      y += 4.4;
+    }
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
+    if (q.customer.address) {
+      for (const line of q.customer.address.split('\n').filter(Boolean)) {
+        doc.text(doc.splitTextToSize(line, leftW), margin, y);
+        y += 4;
+      }
+    }
+    const cityLine = [q.customer.city, q.customer.state].filter(Boolean).join(', ');
+    const cityFull = [cityLine, q.customer.pincode].filter(Boolean).join(', ');
+    if (cityFull) {
+      doc.text(doc.splitTextToSize(cityFull, leftW), margin, y);
+      y += 4;
+    }
     doc.setFontSize(7.5);
     doc.setTextColor(...SUB);
-    doc.text(doc.splitTextToSize(custContact, usable), margin, y);
+    const billContact = [
+      q.customer.gstin ? `GSTIN: ${q.customer.gstin}` : '',
+      q.customer.pan ? `PAN: ${q.customer.pan}` : '',
+      q.customer.phone ? `Ph: ${q.customer.phone}` : '',
+      q.customer.email ? `Email: ${q.customer.email}` : '',
+    ].filter(Boolean).join('\n');
+    if (billContact) {
+      doc.text(doc.splitTextToSize(billContact, leftW), margin, y);
+      y += billContact.split('\n').length * 3.6 + 1;
+    }
+    y += 1;
+
+    const invRows: string[][] = [];
+    if (inv?.invoiceNo) invRows.push(['Invoice No.', inv.invoiceNo]);
+    if (inv?.invoiceDate) invRows.push(['Invoice Date', formatDate(inv.invoiceDate)]);
+    if (q.details.poNumber || q.details.reference) invRows.push(['Ref / P.O. No', q.details.poNumber || q.details.reference || '']);
+    if (q.details.poDate) invRows.push(['P.O. Date', formatDate(q.details.poDate)]);
+    const pos = inv?.placeOfSupply ? `${inv.placeOfSupply}${inv.stateCode ? ` (${inv.stateCode})` : ''}` : '';
+    if (pos) invRows.push(['Place of Supply', pos]);
+    if (inv?.irn) invRows.push(['IRN', inv.irn]);
+
+    if (invRows.length) {
+      autoTable(doc, {
+        startY: customerStartY,
+        margin: { left: rightX, right: margin },
+        body: invRows,
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 1.6, textColor: [31, 41, 55], lineColor: [148, 163, 184], lineWidth: 0.25 },
+        columnStyles: { 0: { cellWidth: rightW * 0.42, halign: 'right' }, 1: { cellWidth: rightW * 0.58, halign: 'right' } },
+      } satisfies UserOptions);
+      const invEnd = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2;
+      y = Math.max(y, invEnd);
+    }
+  } else {
+    // ── Customer (quotation) ─────────────────────────────────
+    doc.setFontSize(8.5);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text('To,', margin, y);
     y += 4;
+    if (q.customer.attention) {
+      doc.text(q.customer.attention, margin, y);
+      y += 4;
+    }
+    if (q.customer.company || q.customer.name) {
+      doc.setFontSize(9.5);
+      doc.text(doc.splitTextToSize(q.customer.company || q.customer.name, usable), margin, y);
+      y += 4.4;
+    }
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
+    if (q.customer.address) {
+      for (const line of q.customer.address.split('\n').filter(Boolean)) {
+        doc.text(doc.splitTextToSize(line, usable), margin, y);
+        y += 4;
+      }
+    }
+    const cityLine = [q.customer.city, q.customer.state].filter(Boolean).join(', ');
+    const cityFull = [cityLine, q.customer.pincode].filter(Boolean).join(', ');
+    if (cityFull) {
+      doc.text(cityFull, margin, y);
+      y += 4;
+    }
+    const custContact = [
+      q.customer.gstin ? `GSTIN: ${q.customer.gstin}` : '',
+      q.customer.pan ? `PAN: ${q.customer.pan}` : '',
+      q.customer.phone ? `Ph: ${q.customer.phone}` : '',
+      q.customer.email ? `Email: ${q.customer.email}` : '',
+    ].filter(Boolean).join('  |  ');
+    if (custContact) {
+      doc.setFontSize(7.5);
+      doc.setTextColor(...SUB);
+      doc.text(doc.splitTextToSize(custContact, usable), margin, y);
+      y += 4;
+    }
+    y += 1;
   }
-  y += 1;
 
   // ── Subject ────────────────────────────────────────────────
   if (q.details.subject) {
@@ -170,8 +289,8 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     y += Math.max(4.4, subjLines.length * 4.2);
   }
 
-  // ── Reference ──────────────────────────────────────────────
-  if (q.details.poNumber || q.details.reference) {
+  // ── Reference (quotation only; invoices show it in the details column) ──
+  if (!isInvoice && (q.details.poNumber || q.details.reference)) {
     const refText = q.details.poNumber
       ? `YOUR P.ORDER NO. ${q.details.poNumber}${q.details.poDate ? `  DT.${formatDate(q.details.poDate)}` : ''}`
       : q.details.reference || '';
@@ -245,13 +364,14 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     doc.text(`Page ${page}`, pageW - margin, 291, { align: 'right' });
   };
 
+  const ts = template.tableStyle ?? 'bordered';
   autoTable(doc, {
     startY: y,
     margin: { left: margin, right: margin, bottom: 14 },
     head,
     body,
-    theme: 'grid',
-    styles: { fontSize: 8, cellPadding: 1.6, textColor: [31, 41, 55], lineColor: [148, 163, 184], lineWidth: 0.25 },
+    theme: ts === 'minimal' ? 'plain' : ts === 'zebra' ? 'striped' : 'grid',
+    styles: { fontSize: 8, cellPadding: 1.6, textColor: [31, 41, 55], lineColor: [148, 163, 184], lineWidth: ts === 'minimal' ? 0 : 0.25 },
     headStyles: { fillColor: template.tableHeaderBg, textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 8 },
     columnStyles,
     didParseCell: (data) => {

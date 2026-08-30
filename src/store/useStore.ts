@@ -15,7 +15,7 @@ import { uid } from '@/lib/id';
 import { defaultCompany, defaultSettings, defaultTemplates } from '@/lib/defaults';
 import { todayISO } from '@/lib/format';
 import { storage } from '@/services/storage';
-import { buildBlankQuotation, nextQuoteNumber } from '@/services/builder';
+import { buildBlankQuotation, buildBlankInvoice, buildInvoiceFromQuotation, nextQuoteNumber } from '@/services/builder';
 
 const jsonStorage: StateStorage = {
   getItem: (name) => storage.read<string | null>(name, null) as unknown as string,
@@ -48,6 +48,8 @@ interface StoreState {
   undo: () => void;
   redo: () => void;
   createBlank: () => string;
+  createBlankInvoice: () => string;
+  createInvoiceFromQuotation: (id: string) => string | null;
 
   saveQuotation: (q: Quotation) => void;
   deleteQuotation: (id: string) => void;
@@ -141,6 +143,26 @@ export const useStore = create<StoreState>()(
         const q = buildBlankQuotation(quoteNo, company, settings);
         set({ current: q, past: [], future: [] });
         get().updateSettings({ quoteSeq: seq });
+        return q.id;
+      },
+
+      createBlankInvoice: () => {
+        const { settings, company } = get();
+        const q = buildBlankInvoice(company, settings);
+        set({ current: q, past: [], future: [] });
+        get().updateSettings({ invoiceSeq: settings.invoiceSeq + 1 });
+        get().logAudit('CREATE', `Created invoice ${q.invoice?.invoiceNo ?? ''}`);
+        return q.id;
+      },
+
+      createInvoiceFromQuotation: (id) => {
+        const src = get().quotations.find((x) => x.id === id);
+        if (!src) return null;
+        const { settings, company } = get();
+        const q = buildInvoiceFromQuotation(src, company, settings);
+        set({ quotations: [q, ...get().quotations], current: q, past: [], future: [] });
+        get().updateSettings({ invoiceSeq: settings.invoiceSeq + 1 });
+        get().logAudit('CREATE', `Invoice ${q.invoice?.invoiceNo ?? ''} from quotation ${src.details.quoteNo}`);
         return q.id;
       },
 
@@ -313,7 +335,24 @@ export const useStore = create<StoreState>()(
         audit: s.audit,
         analytics: s.analytics,
       }),
-      version: 1,
+      version: 2,
+      migrate: (persisted, version) => {
+        const p = (persisted ?? {}) as Partial<StoreState>;
+        const base = defaultTemplates();
+        let templates: QuoteTemplate[] = Array.isArray(p.templates) ? (p.templates as QuoteTemplate[]) : base;
+        templates = templates.map((t) => ({
+          ...t,
+          tableStyle: t.tableStyle ?? 'bordered',
+        }));
+        const existing = new Set(templates.map((t) => t.id));
+        for (const def of base) {
+          if (!existing.has(def.id)) {
+            templates = [...templates, def];
+            existing.add(def.id);
+          }
+        }
+        return { ...p, templates };
+      },
     },
   ),
 );

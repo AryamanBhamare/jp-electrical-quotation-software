@@ -164,6 +164,12 @@ export default function Settings() {
                 <FieldBlock label="Website">
                   <Input value={company.website} onChange={(e) => setCompany({ website: e.target.value })} />
                 </FieldBlock>
+                <FieldBlock label="State (Place of Supply)">
+                  <Input value={company.state ?? ''} onChange={(e) => setCompany({ state: e.target.value })} placeholder="Maharashtra" />
+                </FieldBlock>
+                <FieldBlock label="GST State Code">
+                  <Input value={company.stateCode ?? ''} onChange={(e) => setCompany({ stateCode: e.target.value })} placeholder="27" />
+                </FieldBlock>
               </div>
               <FieldBlock label="Address">
                 <Textarea rows={2} value={company.address} onChange={(e) => setCompany({ address: e.target.value })} />
@@ -245,10 +251,9 @@ export default function Settings() {
             <CardContent className="space-y-4 p-5 pt-0">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <FieldBlock label="Theme">
-                  <Select value={settings.theme} onValueChange={(v) => updateSettings({ theme: v as 'light' | 'dark' | 'system' })}>
+                  <Select value={settings.theme === 'system' ? 'light' : settings.theme} onValueChange={(v) => updateSettings({ theme: v as 'light' | 'dark' })}>
                     <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="system" className="text-xs">System</SelectItem>
                       <SelectItem value="light" className="text-xs">Light</SelectItem>
                       <SelectItem value="dark" className="text-xs">Dark</SelectItem>
                     </SelectContent>
@@ -290,6 +295,9 @@ export default function Settings() {
                 </FieldBlock>
                 <FieldBlock label="Quotation year">
                   <Input value={settings.quoteYear} onChange={(e) => updateSettings({ quoteYear: e.target.value })} />
+                </FieldBlock>
+                <FieldBlock label="Invoice number prefix">
+                  <Input value={settings.invoicePrefix} onChange={(e) => updateSettings({ invoicePrefix: e.target.value.toUpperCase() })} />
                 </FieldBlock>
                 <FieldBlock label="Default watermark text">
                   <Input value={settings.watermarkText} onChange={(e) => updateSettings({ watermarkText: e.target.value })} />

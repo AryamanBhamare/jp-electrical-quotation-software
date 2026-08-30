@@ -53,7 +53,7 @@ export function PreviewPane({ quote, template, onPrint }: Props) {
         </Button>
       </div>
 
-      <div ref={containerRef} className="scrollbar-thin flex-1 overflow-auto rounded-xl bg-slate-200/60 p-4 dark:bg-slate-950/40">
+      <div ref={containerRef} className="scrollbar-thin flex-1 overflow-auto rounded-xl bg-slate-200/60 p-4 dark:bg-neutral-950/40">
         <div
           className="mx-auto origin-top"
           style={{

@@ -35,6 +35,8 @@ export interface CompanyDetails {
   email: string;
   phone: string;
   website: string;
+  state?: string; // e.g. "Maharashtra" (used as default Place of Supply on invoices)
+  stateCode?: string; // e.g. "27" (GST state code)
   logo: string | null; // data-URL
   stamp: string | null; // data-URL
   bank: BankDetails;
@@ -120,6 +122,43 @@ export interface Totals {
 }
 
 // ── Quotation ────────────────────────────────────────────────
+export type DocType = 'quotation' | 'invoice';
+
+export type InvoiceCopyType =
+  | 'ORIGINAL FOR RECIPIENT'
+  | 'DUPLICATE FOR TRANSPORTER'
+  | 'DUPLICATE FOR SUPPLIER'
+  | 'TRIPLICATE FOR SUPPLIER';
+
+export const INVOICE_COPY_TYPES: InvoiceCopyType[] = [
+  'ORIGINAL FOR RECIPIENT',
+  'DUPLICATE FOR TRANSPORTER',
+  'DUPLICATE FOR SUPPLIER',
+  'TRIPLICATE FOR SUPPLIER',
+];
+
+export interface InvoiceOptions {
+  invoiceNo: string;
+  invoiceDate: string; // yyyy-mm-dd
+  copyType: InvoiceCopyType;
+  placeOfSupply: string; // e.g. "Maharashtra"
+  stateCode: string; // e.g. "27"
+  irn: string; // e-invoice IRN (optional)
+}
+
+export function emptyInvoiceOptions(): InvoiceOptions {
+  return {
+    invoiceNo: '',
+    invoiceDate: new Date().toISOString().slice(0, 10),
+    copyType: 'ORIGINAL FOR RECIPIENT',
+    placeOfSupply: '',
+    stateCode: '',
+    irn: '',
+  };
+}
+
+export const isInvoice = (q: Quotation): boolean => q.docType === 'invoice';
+
 export interface QuotationDetails {
   quoteNo: string;
   quoteDate: string; // yyyy-mm-dd
@@ -166,6 +205,9 @@ export interface Quotation {
   showQr: boolean;
   sourcePo: string | null; // original file name
   history: QuotationSnapshot[];
+  // Billing (Tax Invoice) fields — present when docType === 'invoice'
+  docType?: DocType; // defaults to 'quotation'
+  invoice?: InvoiceOptions | null;
 }
 
 export interface QuotationSnapshot {
@@ -193,6 +235,7 @@ export interface QuoteTemplate {
   pageMargin: number; // px (preview scale)
   bodyFontSize: number;
   tableHeaderBg: string;
+  tableStyle?: 'bordered' | 'zebra' | 'minimal';
 }
 
 // ── Settings ─────────────────────────────────────────────────
@@ -211,6 +254,8 @@ export interface AppSettings {
   quotePrefix: string;
   quoteYear: string;
   quoteSeq: number;
+  invoicePrefix: string;
+  invoiceSeq: number;
   analyticsEnabled: boolean;
 }
 
@@ -314,7 +359,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     '1) Prices are exclusive of GST.\n2) Goods once supplied will not be taken back.\n3) Warranty as per standard electrical industry norms.\n4) Any dispute subject to local jurisdiction only.',
   defaultNotes:
     'WORK START AFTER YOUR CONFIRMATION OR PO RELEASE.\nPAYMENT TERMS WITHIN 15 DAYS ONLY.\nGST EXTRA AS APPLICABLE.',
-  theme: 'system',
+  theme: 'light',
   dateFormat: 'DD/MM/YYYY',
   language: 'en',
   autoSave: true,
@@ -322,6 +367,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   quotePrefix: 'JPE',
   quoteYear: String(new Date().getFullYear()),
   quoteSeq: 0,
+  invoicePrefix: 'INV',
+  invoiceSeq: 0,
   analyticsEnabled: true,
 };
 

@@ -82,7 +82,7 @@ export function ItemTable({ items, onChange }: Props) {
   const visible = filtered ?? items.map((_, i) => i);
 
   const tdInput =
-    'h-8 w-full rounded border border-transparent bg-transparent px-1.5 text-xs outline-none transition-colors focus:border-primary focus:bg-white focus:ring-1 focus:ring-primary dark:focus:bg-slate-800';
+    'h-8 w-full rounded border border-transparent bg-transparent px-1.5 text-xs outline-none transition-colors focus:border-primary focus:bg-white focus:ring-1 focus:ring-primary dark:focus:bg-neutral-800';
   const tdMini = tdInput + ' h-7 text-[11px]';
 
   const handleKey = (e: React.KeyboardEvent<HTMLInputElement>, index: number, col: string) => {
@@ -184,17 +184,22 @@ export function ItemTable({ items, onChange }: Props) {
                     </td>
                     <td className="p-1 pt-2 text-center font-medium text-muted-foreground">{i + 1}</td>
                     <td className="p-1">
-                      <input
+                      <textarea
                         data-cell={`${i}:desc`}
-                        className={tdInput}
+                        className="h-auto min-h-[52px] w-full resize-y rounded-md border border-border bg-background/70 px-2 py-1.5 text-xs leading-5 outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-primary focus:bg-white focus:ring-1 focus:ring-primary dark:bg-neutral-900/50 dark:focus:bg-neutral-800"
+                        rows={Math.max(2, Math.min(8, it.description.split('\n').length + Math.floor(it.description.length / 38)))}
                         value={it.description}
+                        spellCheck={false}
                         onFocus={(e) => {
                           commit();
                           editingIndex.current = i;
+                          e.currentTarget.select();
                         }}
                         onChange={(e) => update(i, { description: e.target.value })}
-                        onKeyDown={(e) => handleKey(e, i, 'desc')}
-                        placeholder="Item description…"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') e.currentTarget.blur();
+                        }}
+                        placeholder={'Type / paste the item here…\n(e.g.) 1) PLANT GOVT. ANNUAL ELECTRICAL\nINSTALLATION INSPECTION CHARGES.\nWORK INCLUDE :-\n• PLANT GOVT. ELECTRICAL INSTALLATION\n  AUDIT REPORT MAKING & SUBMISSION.'}
                       />
                       <div className="mt-1 flex items-center gap-1.5">
                         <input

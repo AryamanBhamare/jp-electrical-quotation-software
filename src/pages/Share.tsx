@@ -49,8 +49,10 @@ export default function Share() {
     embedded ?? quotations.find((q) => q.id === codeStr || q.details.quoteNo === codeStr) ?? null;
 
   const template = useMemo(() => {
-    if (!data) return templates.find((t) => t.isDefault) ?? templates[0] ?? null;
-    return templates.find((t) => t.id === data.templateId) ?? templates.find((t) => t.isDefault) ?? templates[0] ?? null;
+    if (!data) return null;
+    const base = templates.find((t) => t.id === data.templateId) ?? templates.find((t) => t.isDefault) ?? templates[0] ?? null;
+    if (!base) return null;
+    return { ...base, accent: data.theme?.accent || base.accent, font: data.theme?.font || base.font };
   }, [data, templates]);
 
   if (pending) {

@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { RefreshCw, Save, UserPlus } from 'lucide-react';
-import type { QuoteItem, Quotation } from '@shared/types';
-import { CURRENCIES, INDIAN_STATES } from '@shared/types';
+import type { InvoiceCopyType, QuoteItem, Quotation } from '@shared/types';
+import { CURRENCIES, INDIAN_STATES, INVOICE_COPY_TYPES, emptyInvoiceOptions } from '@shared/types';
 import { useStore } from '@/store/useStore';
 import { TextField, TextAreaField, NumberField, Field } from './Field';
 import { ItemTable } from './ItemTable';
@@ -41,6 +41,11 @@ export function EditorForm({ quote }: { quote: Quotation }) {
   const setCompany = (p: Partial<Quotation['company']>) => patch((d) => void (d.company = { ...d.company, ...p }));
   const setTheme = (p: Partial<Quotation['theme']>) => patch((d) => void Object.assign(d.theme, p));
   const toggle = (k: 'showLogo' | 'showStamp' | 'showSignature' | 'showQr') => patch((d) => void (d[k] = !d[k]));
+  const setInvoice = (p: Partial<NonNullable<Quotation['invoice']>>) =>
+    patch((d) => {
+      const base = d.invoice ?? emptyInvoiceOptions();
+      d.invoice = { ...base, ...p };
+    });
 
   const saveCustomer = () => {
     const existing = customers.find((c) => c.id === quote.customer.id);
@@ -171,6 +176,36 @@ export function EditorForm({ quote }: { quote: Quotation }) {
           <TextAreaField label="Opening Paragraph (Dear Sir, …)" className="sm:col-span-2" value={quote.introduction} onChange={(v) => patch((d) => void (d.introduction = v))} rows={3} placeholder="Dear Sir,&#10;&#10;With reference to the above subject, we are pleased to submit our quotation as follows." />
         </div>
       </SectionCard>
+
+      {/* ── Tax Invoice Details ── */}
+      {quote.docType === 'invoice' ? (
+        <SectionCard title="Tax Invoice Details">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <TextField label="Invoice No." value={quote.invoice?.invoiceNo ?? ''} onChange={(v) => setInvoice({ invoiceNo: v })} />
+            <TextField label="Invoice Date" type="date" value={quote.invoice?.invoiceDate ?? ''} onChange={(v) => setInvoice({ invoiceDate: v })} />
+            <Field label="Copy Type">
+              <Select
+                value={quote.invoice?.copyType ?? 'ORIGINAL FOR RECIPIENT'}
+                onValueChange={(v) => setInvoice({ copyType: v as InvoiceCopyType })}
+              >
+                <SelectTrigger className="text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {INVOICE_COPY_TYPES.map((c) => (
+                    <SelectItem key={c} value={c} className="text-xs">
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <TextField label="Place of Supply" value={quote.invoice?.placeOfSupply ?? ''} onChange={(v) => setInvoice({ placeOfSupply: v })} placeholder="Maharashtra" />
+            <TextField label="State Code (GST)" value={quote.invoice?.stateCode ?? ''} onChange={(v) => setInvoice({ stateCode: v })} placeholder="27" />
+            <TextField label="IRN (e-Invoice No.)" value={quote.invoice?.irn ?? ''} onChange={(v) => setInvoice({ irn: v })} />
+          </div>
+        </SectionCard>
+      ) : null}
 
       {/* ── Items ── */}
       <SectionCard title={`Items (${quote.items.length})`}>

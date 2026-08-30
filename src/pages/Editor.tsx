@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
   Pencil,
   Printer,
+  ReceiptText,
   Redo2,
   Save,
   Share2,
@@ -41,6 +42,7 @@ import { useStore } from '@/store/useStore';
 import { useAutosave } from '@/hooks/useAutosave';
 import { useHotkeys } from '@/hooks/useHotkeys';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { withLiveCompany } from '@/services/builder';
 import { cn } from '@/lib/utils';
 
 function PrintPortal({ children }: { children: React.ReactNode }) {
@@ -66,6 +68,7 @@ export default function Editor() {
   const current = useStore((s) => s.current);
   const quotations = useStore((s) => s.quotations);
   const templates = useStore((s) => s.templates);
+  const company = useStore((s) => s.company);
   const setCurrent = useStore((s) => s.setCurrent);
   const saveQuotation = useStore((s) => s.saveQuotation);
   const addSnapshot = useStore((s) => s.addSnapshot);
@@ -74,6 +77,7 @@ export default function Editor() {
   const pastLen = useStore((s) => s.past.length);
   const futureLen = useStore((s) => s.future.length);
   const duplicate = useStore((s) => s.duplicateQuotation);
+  const convertToInvoice = useStore((s) => s.createInvoiceFromQuotation);
   const setStatus = useStore((s) => s.setStatus);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
@@ -85,16 +89,20 @@ export default function Editor() {
   const docRef = useRef<HTMLDivElement>(null);
   const actions = exportActions();
 
-  const quote = current && current.id === id ? current : quotations.find((q) => q.id === id) ?? null;
+  const rawQuote = id && current?.id === id ? current : quotations.find((q) => q.id === id) ?? null;
+  const quote = useMemo(() => (rawQuote ? withLiveCompany(rawQuote, company) : null), [rawQuote, company]);
 
   useEffect(() => {
-    if (!quote && id && !current) {
+    if (!rawQuote && id && !current) {
       const found = quotations.find((q) => q.id === id);
       if (found) setCurrent(found);
     }
-  }, [id, current, quotations, setCurrent, quote]);
+  }, [id, current, quotations, setCurrent, rawQuote]);
 
-  const template = templates.find((t) => t.id === quote?.templateId) ?? templates[0];
+  const baseTemplate = templates.find((t) => t.id === quote?.templateId) ?? templates[0];
+  const template = quote
+    ? { ...baseTemplate, accent: quote.theme?.accent || baseTemplate.accent, font: quote.theme?.font || baseTemplate.font }
+    : baseTemplate;
 
   const handleSave = () => {
     if (!quote) return;
@@ -232,6 +240,11 @@ export default function Editor() {
               <DropdownMenuItem onClick={() => { const nid = duplicate(quote.id); if (nid) navigate(`/editor/${nid}`); }}>
                 Copy / Duplicate quotation
               </DropdownMenuItem>
+              {quote.docType !== 'invoice' ? (
+                <DropdownMenuItem onClick={() => { const nid = convertToInvoice(quote.id); if (nid) navigate(`/editor/${nid}`); }}>
+                  <ReceiptText className="h-4 w-4" /> Convert to Tax Invoice
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem onClick={() => { setCurrent(null); navigate('/upload'); }}>
                 <Upload className="h-4 w-4" /> Import another PO
               </DropdownMenuItem>
