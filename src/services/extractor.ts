@@ -25,7 +25,7 @@ const RE = {
   revision: /(?:rev|revision)\s*(?:no\.?|#)?\s*[:#\-.]?\s*(?![-–])([A-Za-z0-9][A-Za-z0-9/._\-]{0,6})/i,
   gstPercent: /(?:gst|tax)\s*(?:rate)?\s*[:#\-.]?\s*(\d+(?:\.\d+)?)\s*%/i,
   pincode: /\b([1-9][0-9]{5})\b/,
-  numeric: /^[₹$€£]?\s?\-?[\d,]+(?:\.\d{1,6})?$/,
+  numeric: /^[₹$€£]?\s?\-?[\d,]+(?:\.\d{1,6})?\s*\/?\s*\-?$/,
   grandTotal: /(?:grand\s*total|net\s*total|total\s*amount|amount\s*payable|total\s*payable|bill\s*total|invoice\s*total)(?:\s*(?:inr|rs\.?|rupees))?\s*[:₹$€£\-.]?\s*([\d,]+(?:\.\d{1,3})?)/i,
   grandTotalLoose: /\btotal\b(?:\s*(?:inr|rs\.?|rupees))?\s*[:₹$€£\-.]?\s*([\d,]+(?:\.\d{1,3})?)/i,
   subTotal: /(?:sub\s*total|subtotal|total\s*before\s*(?:tax|gst)|taxable\s*amount|taxable\s*value|total\s*taxable|base\s*amount|basic\s*amount|total\s*value|net\s*amount)\s*(?:inr|rs\.?|rupees)?\s*[:₹$€£\-.]?\s*([\d,]+(?:\.\d{1,3})?)/i,
@@ -66,7 +66,10 @@ function safe<T>(label: string, fallback: T, fn: () => T): T {
 }
 
 function num(text: string): number | null {
-  const cleaned = text.replace(/[₹$€£,\s]/g, '');
+  const cleaned = text
+    .replace(/[₹$€£,\s]/g, '')
+    .replace(/\s*\/\s*-?\s*$/, '')
+    .replace(/\s*-\s*$/, '');
   if (!/^-?\d*\.?\d+$/.test(cleaned)) return null;
   const v = parseFloat(cleaned);
   return isFinite(v) ? v : null;
@@ -76,13 +79,15 @@ function isNumericToken(t: string): boolean {
   return RE.numeric.test(t.trim());
 }
 
-// HSN / SAC codes are pure integers (4-8 digits) with no decimal or thousand
-// separator. Prices/amounts nearly always carry ".00" or a comma — guarded below,
-// so a trailing HSN/SAC code is never mistaken for the amount.
+// HSN / SAC codes under GST are pure 6-8 digit integers without a decimal or
+// thousand separator. 4-5 digit integers are far more often quantities, rates or
+// amounts (1500, 6000, 12000…) than codes — and bare 4-digit HSNs are obsolete —
+// so only 6-8 digit integers count as code-like. Prices/amounts carry ".00" or a
+// comma, so a trailing code is still not mistaken for the amount column.
 function isCodeLike(text: string): boolean {
   const cleaned = text.replace(/[₹$€£\s]/g, '');
   if (/[.,]/.test(cleaned)) return false;
-  return /^\d{4,8}$/.test(cleaned);
+  return /^\d{6,8}$/.test(cleaned);
 }
 
 // ── small text helpers ──────────────────────────────────────
@@ -153,17 +158,26 @@ function isMetaLine(text: string): boolean {
 
 // Totals / tax summary lines end the item table.
 function isTotalsLine(text: string): boolean {
-  if (!/\d/.test(text)) return false;
   const t = text.trim();
-  if (/^(cgst|sgst|igst|cess)\b/i.test(t)) return true;
+  if (/^(?:cgst|sgst|igst|cess|gst)\b/i.test(t)) return true;
+  // Digit-less totals labels ("SUB", "TOTAL", "GRAND TOTAL", "ONLY. TOTAL") also close
+  // the table — some bills print the words and the value on separate lines.
+  if (!/\d/.test(t)) {
+    return (
+      /\b(?:sub(?:\s*total)?|subtotal|grand\s*total|round\s*off(?:ing)?)\b/i.test(t) ||
+      (/\btotal\b/i.test(t) && t.length <= 24) ||
+      /\b(?:balance|outstanding|due|arrear)\b/i.test(t)
+    );
+  }
   // Labels may be buried mid-line (e.g. "Terms & Conditions 1.000 Taxable Amount 15,000.00").
   const m = t.toLowerCase().match(/(?:^|[^\w&])(taxable\s*(?:amount|value)|sub\s*total|subtotal|grand\s*total|net\s*(?:amount|total)|basic\s*amount|total\s*(?:amount|taxable|value|before|inr|payable)?|amount\s*payable|round\s*(?:off|ing)|discount|adjustment|balance|paid|due|less)/);
   if (!m) return false;
-  const labelEnd = (m.index ?? 0) + m[0].length;
-  const rest = t.slice(labelEnd);
-  const value = /^\s*(?:inr|rs\.?|rupees)?\s*[:₹$€£\-\s]*\d/.test(rest);
-  const isPercent = /^\s*(?:inr|rs\.?|rupees)?\s*[:₹$€£\-\s]*\d+(?:\.\d+)?%/.test(rest);
-  return value && !isPercent;
+  let rest = t.slice((m.index ?? 0) + m[0].length).replace(/^\s*(?:inr|rs\.?|rupees)\b/i, '');
+  // Once a totals label is present the remainder must be a bare value (digits, gaps,
+  // separators, currency marks, superscript-fragmented "1 0 0 0 . 0 0"). Any real
+  // letters mean the label was just prose and this is not a totals line.
+  if (!/\d/.test(rest) || /[a-z]/i.test(rest)) return false;
+  return !/\d+(?:\.\d+)?%/.test(rest);
 }
 
 function looksLikeHeader(text: string): boolean {
@@ -472,8 +486,8 @@ interface HeaderCol {
 }
 
 function classifyHeaderToken(raw: string): HeaderCol['role'] {
-  const t = raw.replace(/[,:.]/g, '').toLowerCase();
-  if (/^(sno|srno|sr|slno|serial|qtyno|sno)$/.test(t)) return 'sno';
+  const t = raw.replace(/[,:.%]/g, '').toLowerCase();
+  if (/^(sno|srno|sr|slno|serial|qtyno|sn)$/.test(t)) return 'sno';
   if (t === 'hsn' || t.startsWith('hsn') || t === 'sac' || t.startsWith('sac')) return 'hsn';
   if (/^(qty|qnty|quantity|qnt|quant|qty)$/.test(t)) return 'qty';
   if (/^(unit|uom|u\/m|unt|uom)$/.test(t)) return 'unit';
@@ -515,8 +529,14 @@ function findHeaderLine(lines: PoLine[]): { line: PoLine; cols: HeaderCol[]; ind
   return null;
 }
 
-// Unit words used to anchor quantity ("1 NOS", "10 PCS", "2 SET").
+// Unit words used to anchor quantity ("1 NOS", "10 PCS", "2 SET"). Trailing dots
+// are common ("NOS."), so the lexeme is normalized before matching.
 const QTY_UNIT = /^(nos?|pcs?|pieces?|kgs?|gms?|grams?|mt|mtrs?|metres?|meters?|ltrs?|litres?|ml|doz|dozen|pairs?|gallon|tons?|tonnes?|cft|sqft|sqm|sqmt|sqmtr|cum|units?|bundles?|rolls?|boxes?|packets?|sets?|lots?|kits?|bags?|pkts?|ft|feet|in|inch|mm|cm)$/i;
+
+function unitLexeme(text: string): string | null {
+  const w = text.replace(/[.\s]+$/, '');
+  return QTY_UNIT.test(w) ? w.toUpperCase() : null;
+}
 
 interface ParsedRow {
   description: string;
@@ -573,42 +593,71 @@ function finishRow(
   return row;
 }
 
-// Strip trailing tax-percentage values (e.g. "… 15,000.00 9.00 9.00") when the
-// header declares CGST/SGST/IGST columns. Returns the surviving numerics plus the
-// indices of the stripped ones (so they can be excluded from the description too).
+// Strip tax-percentage values (CGST/SGST/IGST% columns) from a numeric row. The
+// percentages may sit AFTER the amount ("… 5,000.00 9 9") or BETWEEN rate and
+// amount ("650/- 9 9 30,550"). When the last number looks like the amount, the
+// percentages are interior; otherwise they trail it. Never strips more than the
+// declared tax-column count and never down to fewer than 2 financial numbers.
 function stripTaxPercentages(
   numerics: Array<{ text: string; idx: number; isNum: boolean }>,
   hasTax: boolean,
   nTax: number,
 ): { kept: Array<{ text: string; idx: number; isNum: boolean }>; removed: number[] } {
-  if (!hasTax || numerics.length <= 3) return { kept: numerics, removed: [] };
-  const working = [...numerics];
-  let stripped = 0;
-  while (stripped < nTax && working.length - stripped > 3) {
-    const tok = working[working.length - 1 - stripped];
-    const v = num(tok.text);
-    if (v == null || v < 0 || v > 100) break;
-    if (!Number.isInteger(v) && !/\.\d{2}$/.test(tok.text)) break;
-    stripped++;
-  }
-  if (!stripped) return { kept: numerics, removed: [] };
-  return {
-    kept: working.slice(0, working.length - stripped),
-    removed: working.slice(working.length - stripped).map((t) => t.idx),
+  const removed: number[] = [];
+  if (!hasTax || nTax <= 0 || numerics.length <= 1) return { kept: numerics, removed };
+  const isPctLike = (t: { text: string }): boolean => {
+    if (/%/.test(t.text)) return true;
+    const v = num(t.text);
+    if (v == null || v < 0 || v > 100) return false;
+    if (t.text.includes(',')) return false;
+    return Number.isInteger(v) || /\.\d{1,2}$/.test(t.text);
   };
+  const working = [...numerics];
+  const last = working[working.length - 1];
+  const lv = num(last.text);
+  const lastAmountLike = /[.,]/.test(last.text) || (lv ?? 0) > 100 || /\.\d{1,2}$/.test(last.text);
+
+  if (lastAmountLike) {
+    // Interior percentages sit between rate and amount — strip them right-to-left.
+    while (removed.length < nTax && working.length > 2) {
+      let pick = -1;
+      for (let k = working.length - 2; k >= 1; k--) {
+        if (isPctLike(working[k])) {
+          pick = k;
+          break;
+        }
+      }
+      if (pick < 0) break;
+      removed.push(working[pick].idx);
+      working.splice(pick, 1);
+    }
+  } else {
+    // Trailing percentages follow the amount — strip from the end.
+    while (removed.length < nTax && working.length - removed.length > 3) {
+      const tail = working[working.length - 1];
+      if (!isPctLike(tail)) break;
+      removed.push(tail.idx);
+      working.pop();
+    }
+  }
+  return { kept: working, removed };
 }
 
 function parseItemRow(text: string, cols: HeaderCol[]): ParsedRow | null {
   const tokens = text.split(/\s+/).filter(Boolean).map((txt, idx) => ({ text: txt, idx, isNum: isNumericToken(txt) }));
-  const numerics = tokens.filter((t) => t.isNum);
+  const colRoles = cols.map((c) => c.role);
+  // A serial-number header ("S.N.", "SR", "Sr No") names the leading token as the
+  // row counter — it must never become quantity/rate/amount.
+  const snIdx = cols.length > 0 && cols[0].role === 'sno' && tokens[0]?.isNum ? tokens[0].idx : -1;
+  const numerics = tokens.filter((t) => t.isNum && t.idx !== snIdx);
   if (numerics.length === 0) return null;
 
-  const colRoles = cols.map((c) => c.role);
   const hasTax = colRoles.includes('tax');
   const nTax = colRoles.filter((r) => r === 'tax').length;
 
   const row: ParsedRow = { description: '' };
   const consumed = new Set<number>();
+  if (snIdx >= 0) consumed.add(snIdx);
   let unitIdx = -1;
   let qtyNumIdx = -1;
 
@@ -618,9 +667,10 @@ function parseItemRow(text: string, cols: HeaderCol[]): ParsedRow | null {
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     if (t.isNum || i === 0 || !tokens[i - 1].isNum) continue;
-    if (QTY_UNIT.test(t.text)) {
+    const uw = unitLexeme(t.text);
+    if (uw) {
       unitIdx = i;
-      row.unit = t.text.toUpperCase();
+      row.unit = uw;
       if (!isCodeLike(tokens[i - 1].text)) {
         qtyNumIdx = tokens[i - 1].idx;
         row.quantity = num(tokens[i - 1].text) ?? undefined;
@@ -664,9 +714,11 @@ function parseItemRow(text: string, cols: HeaderCol[]): ParsedRow | null {
   if (qtyNumIdx < 0 && (numerics.length < 2 || (numerics.length < 3 && !numerics.some((nn) => /[.,]/.test(nn.text))))) return null;
 
   if (qtyNumIdx >= 0) {
-    // unit-anchored rows: the remaining numbers are [rate(, disc), amount]
+    // unit-anchored rows: the remaining numbers are [rate(, disc), amount].
+    // Drop item/HSN codes from the money pool (but keep them for the HSN code).
     const hasDisc = colRoles.includes('disc');
-    const { kept, removed } = stripTaxPercentages(numerics.filter((t) => t.idx !== qtyNumIdx), hasTax, nTax);
+    const allMoney = numerics.filter((t) => t.idx !== qtyNumIdx);
+    const { kept, removed } = stripTaxPercentages(allMoney, hasTax, nTax);
     removed.forEach((i) => consumed.add(i));
     const money = kept.filter((t) => !isCodeLike(t.text));
     if (money.length >= 2) {
@@ -685,7 +737,7 @@ function parseItemRow(text: string, cols: HeaderCol[]): ParsedRow | null {
   // no unit word → consume numerics right-to-left against the header's numeric columns
   const { kept, removed } = stripTaxPercentages(numerics, hasTax, nTax);
   removed.forEach((i) => consumed.add(i));
-  // HSN / SAC codes (pure 4-8 digit integers) must never be mistaken for prices.
+  // HSN / SAC codes (pure 6-8 digit integers) must never be mistaken for prices.
   // Assign qty/rate/amount from money-like tokens first; code tokens are dropped
   // from the description but still detected as the HSN code below.
   const codes = kept.filter((t) => isCodeLike(t.text));
@@ -737,9 +789,10 @@ function parseNumericFallback(text: string): PoItem | null {
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     if (t.isNum || i === 0 || !tokens[i - 1].isNum) continue;
-    if (QTY_UNIT.test(t.text)) {
+    const uw = unitLexeme(t.text);
+    if (uw) {
       unitIdx = i;
-      row.unit = t.text.toUpperCase();
+      row.unit = uw;
       if (!isCodeLike(tokens[i - 1].text)) {
         qtyNumIdx = tokens[i - 1].idx;
         row.quantity = num(tokens[i - 1].text) ?? undefined;
@@ -859,8 +912,16 @@ export function extractTable(lines: PoLine[]): PoItem[] {
         continue;
       }
 
-      // non-numeric line → wrapped-description continuation for the last row
-      if (lastItem && gap < 14 && text.length < 220) {
+      // non-numeric line → wrapped-description continuation for the last row.
+      // Numeric-only lines are totals/footnote values ("1,27,385") not descriptions.
+      if (
+        lastItem &&
+        gap < 14 &&
+        text.length < 220 &&
+        !/^\s*(?:rs\.?\s*in\s*words|amount\s+in\s+words)/i.test(text) &&
+        !/^\s*(?:rupees?\s+)?only\.?\s*$/i.test(text) &&
+        !/^[\d₹$€£.,\s/+×@*()-]+$/.test(text)
+      ) {
         const cleaned = text.replace(/^description\s*[:#\-.]?\s*/i, '');
         lastItem.description = [lastItem.description, cleaned].filter(Boolean).join(' ').trim();
       } else if (!lastItem) {
@@ -889,6 +950,14 @@ export function extractTable(lines: PoLine[]): PoItem[] {
   items.forEach((it) => {
     if ((it.amount == null || it.amount === 0) && it.quantity != null && it.rate != null) {
       it.amount = Math.round(it.quantity * it.rate * 100) / 100;
+    }
+    // Recover a missing quantity from amount ÷ rate when it divides cleanly —
+    // e.g. "20MTR" glued into one token ("… 80/- 9 9 1600" → qty 20).
+    if (it.quantity == null && it.amount != null && it.rate != null && it.rate > 0) {
+      const inferred = it.amount / it.rate;
+      if (Number.isFinite(inferred) && inferred > 0 && inferred < 1_000_000 && Math.abs(inferred - Math.round(inferred)) < 0.01) {
+        it.quantity = Math.round(inferred);
+      }
     }
   });
 
