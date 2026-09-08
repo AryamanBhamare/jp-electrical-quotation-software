@@ -317,7 +317,6 @@ export async function buildDocx(q: Quotation, template: QuoteTemplate): Promise<
     const descParts: string[] = [];
     if (it.description) descParts.push(...it.description.split('\n'));
     if (it.drawingNo || it.revision) descParts.push(`Drg No. ${it.drawingNo || '-'}, Rev No. ${it.revision || '-'}`);
-    if (it.unit) descParts.push(`Unit: ${it.unit}`);
     const zc = ts === 'zebra' && i % 2 === 1 ? '#f8fafc' : undefined;
     return new TableRow({
       children: [

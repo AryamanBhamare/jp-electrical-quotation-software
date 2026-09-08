@@ -329,7 +329,6 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
   const body = q.items.map((it, i) => {
     const descParts = [it.description || ''];
     if (it.drawingNo || it.revision) descParts.push(`Drg No. ${it.drawingNo || '-'}, Rev No. ${it.revision || '-'}`);
-    if (it.unit) descParts.push(`Unit: ${it.unit}`);
     return [
       String(i + 1),
       descParts.filter(Boolean).join('\n'),

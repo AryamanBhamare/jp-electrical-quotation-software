@@ -310,14 +310,9 @@ const QuoteDocument = forwardRef<HTMLDivElement, Props>(({ quote, template, clas
                       Drg No. {it.drawingNo || '-'}, Rev No. {it.revision || '-'}
                     </div>
                   ) : null}
-                  {it.unit ? (
-                    <div className="text-[9.5px]" style={{ color: '#374151' }}>
-                      Unit: {it.unit}
-                    </div>
-                  ) : null}
                 </td>
                 <td className={td} style={{ textAlign: 'center' }}>{it.hsnCode}</td>
-                <td className={td} style={{ textAlign: 'center' }}>{it.quantity}</td>
+                <td className={td} style={{ textAlign: 'center' }}>{it.quantity}{it.unit ? ` ${it.unit}` : ''}</td>
                 <td className={td} style={{ textAlign: 'right' }}>{it.rate ? formatNumber(it.rate) : ''}</td>
                 <td className={td} style={{ textAlign: 'right' }}>{(it.amount ?? itemAmount(it)).toFixed(2)}</td>
               </tr>
