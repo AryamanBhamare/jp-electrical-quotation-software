@@ -320,9 +320,9 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
   const head = [['SR NO', 'DESCRIPTION', 'HSN CODE', 'QTY', 'PRICE', 'AMOUNT']];
   const columnStyles: Record<string, { cellWidth: number; halign?: 'left' | 'center' | 'right' }> = {
     0: { cellWidth: 10 },
-    1: { cellWidth: usable - 72 },
+    1: { cellWidth: usable - 76 },
     2: { cellWidth: 16 },
-    3: { cellWidth: 12 },
+    3: { cellWidth: 16 },
     4: { cellWidth: 17 },
     5: { cellWidth: 17 },
   };
@@ -334,7 +334,7 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
       String(i + 1),
       descParts.filter(Boolean).join('\n'),
       it.hsnCode || '',
-      String(it.quantity ?? ''),
+      String(it.quantity ?? '') + (it.unit ? ` ${it.unit}` : ''),
       it.rate ? formatNumber(it.rate) : '',
       (it.amount ?? itemAmount(it)).toFixed(2),
     ];
@@ -383,9 +383,11 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
 
   y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 5;
 
-  // ── Totals (right aligned) ─────────────────────────────────
-  const totalLeft = margin + usable * 0.5;
-  const totalWidth = usable * 0.5;
+  // ── Totals (right aligned, drawn as a bordered box) ────────
+  // Drawn manually (not via autoTable) so the box always fits the page margins —
+  // right edge is locked to pageW - margin regardless of text width.
+  const b0 = margin + usable * 0.52; // box left edge
+  const b1 = pageW - margin; // box right edge (aligned with the items table)
   const totalRows: string[][] = [['SUB TOTAL', `${sym} ${totals.subTotal.toFixed(2)}`]];
   if (totals.sgst > 0) totalRows.push([`SGST ${q.gst.sgst}%`, `${sym} ${totals.sgst.toFixed(2)}`]);
   if (totals.cgst > 0) totalRows.push([`CGST ${q.gst.cgst}%`, `${sym} ${totals.cgst.toFixed(2)}`]);
@@ -394,22 +396,50 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
   if (q.roundOff && totals.roundOff !== 0) totalRows.push(['ROUND OFF', `${sym} ${totals.roundOff.toFixed(2)}`]);
   totalRows.push(['GRAND TOTAL', `${sym} ${totals.rounded.toFixed(2)}`]);
 
-  autoTable(doc, {
-    startY: y,
-    margin: { left: totalLeft, right: margin },
-    body: totalRows,
-    theme: 'grid',
-    styles: { fontSize: 8.5, cellPadding: 1.6, textColor: [0, 0, 0], lineColor: [148, 163, 184], lineWidth: 0.2 },
-    columnStyles: { 0: { cellWidth: totalWidth * 0.62, halign: 'right' }, 1: { cellWidth: totalWidth * 0.38, halign: 'right' } },
-    didParseCell: (data) => {
-      if (data.row.index === totalRows.length - 1) {
-        data.cell.styles.fontStyle = 'bold';
-        data.cell.styles.fillColor = template.tableHeaderBg;
-        data.cell.styles.fontSize = 9.5;
-      }
-    },
-  } satisfies UserOptions);
-  y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4;
+  const rowH = 5.2;
+  const labelW = (b1 - b0) * 0.6;
+  const valueW = b1 - b0 - labelW;
+  let boxBottom = y + totalRows.length * rowH;
+  if (boxBottom > 279 - margin) {
+    doc.addPage();
+    y = margin + 6;
+    boxBottom = y + totalRows.length * rowH;
+  }
+  const gridColor: [number, number, number] = [148, 163, 184];
+  totalRows.forEach(([rawLabel, value], i) => {
+    const ry = y + i * rowH;
+    const isLast = i === totalRows.length - 1;
+    if (isLast) {
+      doc.setFillColor(template.tableHeaderBg);
+      doc.rect(b0, ry, b1 - b0, rowH, 'F');
+    }
+    // cell borders
+    doc.setDrawColor(...gridColor);
+    doc.setLineWidth(0.2);
+    doc.line(b0 + labelW, ry, b0 + labelW, ry + rowH); // vertical divider
+    doc.line(b0, ry, b1, ry); // top
+    if (i === totalRows.length - 1) doc.line(b0, ry + rowH, b1, ry + rowH); // bottom
+    // text
+    doc.setFontSize(isLast ? 9.5 : 8.5);
+    doc.setFont('helvetica', isLast ? 'bold' : 'normal');
+    doc.setTextColor(0, 0, 0);
+    const label = isLast ? 'GRAND TOTAL' : rawLabel;
+    // fit long labels (e.g. "DISCOUNT 10%") by shrinking font when needed
+    let lf = isLast ? 9.5 : 8.5;
+    if (doc.getTextWidth(label) > labelW - 2) {
+      lf = Math.max(7, lf * (labelW - 2) / doc.getTextWidth(label));
+      doc.setFontSize(lf);
+    }
+    doc.text(label, b0 + 1.6, ry + 3.3);
+    let vf = isLast ? 9.5 : 8.5;
+    doc.setFontSize(vf);
+    if (doc.getTextWidth(value) > valueW - 3.2) {
+      vf = Math.max(6.5, (vf * (valueW - 3.2)) / doc.getTextWidth(value));
+      doc.setFontSize(vf);
+    }
+    doc.text(value, b1 - 1.6, ry + 3.3, { align: 'right' });
+  });
+  y = boxBottom + 4;
 
   // amount in words
   doc.setFontSize(8.5);
@@ -510,7 +540,7 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
   }
 
   // ── Watermark ──────────────────────────────────────────────
-  if (q.watermark) {
+  if (q.watermark && q.showWatermark !== false) {
     doc.setFontSize(40);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(200);

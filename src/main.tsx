@@ -1,3 +1,17 @@
+// pdfjs-dist 4.x uses Promise.withResolvers(), which is missing on older browsers
+// (pre-Chrome/Edge 119). Polyfill it so PDF parsing doesn't crash there.
+if (typeof Promise.withResolvers !== 'function') {
+  Promise.withResolvers = function withResolvers<T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  } as typeof Promise.withResolvers;
+}
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import '@fontsource/inter/400.css';

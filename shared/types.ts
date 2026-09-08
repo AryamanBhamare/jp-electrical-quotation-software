@@ -198,6 +198,7 @@ export interface Quotation {
   introduction: string; // opening paragraph ("Dear Sir, ...")
   footer: string;
   watermark: string;
+  showWatermark: boolean; // toggle watermark on/off per document
   theme: QuoteTheme;
   showLogo: boolean;
   showStamp: boolean;

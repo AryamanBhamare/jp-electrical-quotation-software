@@ -324,7 +324,7 @@ export async function buildDocx(q: Quotation, template: QuoteTemplate): Promise<
         cell(String(i + 1), { align: AlignmentType.CENTER, width: widths[0], bg: zc }),
         cellMulti(descParts.filter(Boolean), { width: widths[1], bg: zc }),
         cell(it.hsnCode, { align: AlignmentType.CENTER, width: widths[2], bg: zc }),
-        cell(String(it.quantity ?? ''), { align: AlignmentType.CENTER, width: widths[3], bg: zc }),
+        cell(String(it.quantity ?? '') + (it.unit ? ` ${it.unit}` : ''), { align: AlignmentType.CENTER, width: widths[3], bg: zc }),
         cell(it.rate ? formatNumber(it.rate) : '', { align: AlignmentType.RIGHT, width: widths[4], bg: zc }),
         cell(it.amount ? it.amount.toFixed(2) : '', { align: AlignmentType.RIGHT, width: widths[5], bg: zc }),
       ],

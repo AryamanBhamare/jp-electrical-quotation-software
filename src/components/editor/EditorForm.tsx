@@ -41,7 +41,8 @@ export function EditorForm({ quote }: { quote: Quotation }) {
   const setDiscount = (p: Partial<Quotation['discount']>) => patch((d) => void Object.assign(d.discount, p));
   const setCompany = (p: Partial<Quotation['company']>) => patch((d) => void (d.company = { ...d.company, ...p }));
   const setTheme = (p: Partial<Quotation['theme']>) => patch((d) => void Object.assign(d.theme, p));
-  const toggle = (k: 'showLogo' | 'showStamp' | 'showSignature' | 'showQr') => patch((d) => void (d[k] = !d[k]));
+  const toggle = (k: 'showLogo' | 'showStamp' | 'showSignature' | 'showQr' | 'showWatermark') =>
+    patch((d) => void (d[k] = !(d[k] !== false)));
   const setInvoice = (p: Partial<NonNullable<Quotation['invoice']>>) =>
     patch((d) => {
       const base = d.invoice ?? emptyInvoiceOptions();
@@ -338,6 +339,7 @@ export function EditorForm({ quote }: { quote: Quotation }) {
           <ToggleRow label="Signature" checked={quote.showSignature} onChange={() => toggle('showSignature')} />
           <ToggleRow label="Stamp" checked={quote.showStamp} onChange={() => toggle('showStamp')} />
           <ToggleRow label="Payment QR" checked={quote.showQr} onChange={() => toggle('showQr')} />
+          <ToggleRow label="Watermark" checked={quote.showWatermark !== false} onChange={() => toggle('showWatermark')} />
         </div>
         <p className="mt-3 text-[11px] text-muted-foreground">
           Logo, signature and stamp images are managed in Settings → Company Profile.

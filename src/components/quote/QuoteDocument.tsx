@@ -113,7 +113,7 @@ const QuoteDocument = forwardRef<HTMLDivElement, Props>(({ quote, template, clas
       data-quote-id={quote.id}
     >
       {/* watermark */}
-      {quote.watermark ? (
+      {quote.watermark && quote.showWatermark !== false ? (
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 flex items-center justify-center"
