@@ -27,7 +27,9 @@ const SUB = [55, 65, 81] as const;
 
 export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<Blob> {
   const totals = computeTotals(q.items, q.gst, q.discount, q.roundOff, q.details.currency);
-  const sym = q.details.currency === 'INR' ? '₹' : q.details.currency;
+  // jsPDF built-in helvetica (WinAnsi) cannot encode ₹ (U+20B9) — it renders as
+  // broken glyphs like "¹ 1 9 2 , 0 0 0". Use "Rs." for INR so totals stay clean.
+  const sym = q.details.currency === 'INR' ? 'Rs.' : q.details.currency;
   const accent = template.accent;
   const margin = Math.max(8, template.pageMargin * 0.2646); // px → mm approx
   const pageW = 210;
@@ -37,7 +39,7 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
   doc.setFont('helvetica');
 
   const needPage = (next: number) => {
-    if (next > 279 - margin) {
+    if (next > 286) {
       doc.addPage();
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.3);
@@ -164,8 +166,8 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
   // ── Invoice: Bill To (left) · Invoice details (right) ─────
   if (isInvoice) {
     const leftW = usable * 0.5;
-    const rightX = margin + usable * 0.52;
-    const rightW = usable * 0.46;
+    const rightX = margin + usable * 0.5;
+    const rightW = usable * 0.5;
 
     doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
@@ -396,10 +398,10 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
   totalRows.push(['GRAND TOTAL', `${sym} ${totals.rounded.toFixed(2)}`]);
 
   const rowH = 5.2;
-  const labelW = (b1 - b0) * 0.6;
-  const valueW = b1 - b0 - labelW;
+  const valueW = Math.max(28, b1 - b0 - 58); // value column, labels get the rest
+  const labelW = b1 - b0 - valueW;
   let boxBottom = y + totalRows.length * rowH;
-  if (boxBottom > 279 - margin) {
+  if (boxBottom > 286) {
     doc.addPage();
     y = margin + 6;
     boxBottom = y + totalRows.length * rowH;
@@ -438,6 +440,11 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     }
     doc.text(value, b1 - 1.6, ry + 3.3, { align: 'right' });
   });
+  // outer box borders (left + right) so the box reads as one rectangle
+  doc.setDrawColor(...gridColor);
+  doc.setLineWidth(0.2);
+  doc.line(b0, y, b0, boxBottom);
+  doc.line(b1, y, b1, boxBottom);
   y = boxBottom + 4;
 
   // amount in words
