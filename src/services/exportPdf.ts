@@ -423,7 +423,7 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     // text
     doc.setFontSize(isLast ? 9.5 : 8.5);
     doc.setFont('helvetica', isLast ? 'bold' : 'normal');
-    doc.setTextColor(0, 0, 0);
+    doc.setTextColor(isLast ? 255 : 0, isLast ? 255 : 0, isLast ? 255 : 0);
     const label = isLast ? 'GRAND TOTAL' : rawLabel;
     // fit long labels (e.g. "DISCOUNT 10%") by shrinking font when needed
     let lf = isLast ? 9.5 : 8.5;
