@@ -1,6 +1,6 @@
 // Vector PDF export using jsPDF + autotable with automatic pagination,
 // repeated table headers, header/footer on every page and page numbers.
-import { jsPDF } from 'jspdf';
+import { jsPDF, GState } from 'jspdf';
 import autoTable, { type UserOptions } from 'jspdf-autotable';
 import type { Quotation, QuoteTemplate } from '@shared/types';
 import { computeTotals, itemAmount } from '@/lib/calculations';
@@ -547,10 +547,14 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
 
   // ── Watermark ──────────────────────────────────────────────
   if (q.watermark && q.showWatermark !== false) {
+    // Match the on-screen preview: faint accent-colored text at template.watermarkOpacity.
+    const opacity = Math.min(1, Math.max(0, template.watermarkOpacity ?? 0.06));
+    doc.setGState(new GState({ opacity }));
     doc.setFontSize(40);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(200);
-    doc.text(q.watermark, pageW / 2, 150, { align: 'center', angle: 35 });
+    doc.setTextColor(template.accent);
+    doc.text(q.watermark, pageW / 2, 150, { align: 'center', angle: -30 });
+    doc.setGState(new GState({ opacity: 1 }));
   }
 
   const blob = doc.output('blob');
