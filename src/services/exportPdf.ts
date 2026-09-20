@@ -25,6 +25,18 @@ function loadImageDims(dataUrl: string): Promise<ImageDims> {
 const INK = [17, 24, 39] as const;
 const SUB = [55, 65, 81] as const;
 
+// Pick black or white text depending on the background so text is always readable.
+const contrastText = (hex: string): [number, number, number] => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+  if (!m) return [0, 0, 0];
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum < 140 ? [255, 255, 255] : [0, 0, 0];
+};
+
 export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<Blob> {
   const totals = computeTotals(q.items, q.gst, q.discount, q.roundOff, q.details.currency);
   // jsPDF built-in helvetica (WinAnsi) cannot encode ₹ (U+20B9) — it renders as
@@ -182,8 +194,9 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     }
     if (q.customer.company || q.customer.name) {
       doc.setFontSize(9.5);
-      doc.text(doc.splitTextToSize(q.customer.company || q.customer.name, leftW), margin, y);
-      y += 4.4;
+      const compLines = doc.splitTextToSize(q.customer.company || q.customer.name, leftW);
+      doc.text(compLines, margin, y);
+      y += compLines.length * 4.6;
     }
     doc.setFontSize(8.5);
     doc.setFont('helvetica', 'normal');
@@ -196,8 +209,9 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     const cityLine = [q.customer.city, q.customer.state].filter(Boolean).join(', ');
     const cityFull = [cityLine, q.customer.pincode].filter(Boolean).join(', ');
     if (cityFull) {
-      doc.text(doc.splitTextToSize(cityFull, leftW), margin, y);
-      y += 4;
+      const cityLines = doc.splitTextToSize(cityFull, leftW);
+      doc.text(cityLines, margin, y);
+      y += cityLines.length * 4;
     }
     doc.setFontSize(7.5);
     doc.setTextColor(...SUB);
@@ -247,8 +261,9 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     }
     if (q.customer.company || q.customer.name) {
       doc.setFontSize(9.5);
-      doc.text(doc.splitTextToSize(q.customer.company || q.customer.name, usable), margin, y);
-      y += 4.4;
+      const compLines = doc.splitTextToSize(q.customer.company || q.customer.name, usable);
+      doc.text(compLines, margin, y);
+      y += compLines.length * 4.6;
     }
     doc.setFontSize(8.5);
     doc.setFont('helvetica', 'normal');
@@ -261,8 +276,9 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     const cityLine = [q.customer.city, q.customer.state].filter(Boolean).join(', ');
     const cityFull = [cityLine, q.customer.pincode].filter(Boolean).join(', ');
     if (cityFull) {
-      doc.text(cityFull, margin, y);
-      y += 4;
+      const cityLines = doc.splitTextToSize(cityFull, usable);
+      doc.text(cityLines, margin, y);
+      y += cityLines.length * 4;
     }
     const custContact = [
       q.customer.gstin ? `GSTIN: ${q.customer.gstin}` : '',
@@ -373,7 +389,7 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     body,
     theme: ts === 'minimal' ? 'plain' : ts === 'zebra' ? 'striped' : 'grid',
     styles: { fontSize: 8, cellPadding: 1.6, textColor: [31, 41, 55], lineColor: [148, 163, 184], lineWidth: ts === 'minimal' ? 0 : 0.25 },
-    headStyles: { fillColor: template.tableHeaderBg, textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 8 },
+    headStyles: { fillColor: template.tableHeaderBg, textColor: contrastText(template.tableHeaderBg), fontStyle: 'bold', fontSize: 8 },
     columnStyles,
     didParseCell: (data) => {
       if (data.section === 'body' && data.column.index !== 1) data.cell.styles.halign = 'center';
@@ -423,7 +439,8 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     // text
     doc.setFontSize(isLast ? 9.5 : 8.5);
     doc.setFont('helvetica', isLast ? 'bold' : 'normal');
-    doc.setTextColor(isLast ? 255 : 0, isLast ? 255 : 0, isLast ? 255 : 0);
+    const rowTextColor: [number, number, number] = isLast ? contrastText(template.tableHeaderBg) : [0, 0, 0];
+    doc.setTextColor(...rowTextColor);
     const label = isLast ? 'GRAND TOTAL' : rawLabel;
     // fit long labels (e.g. "DISCOUNT 10%") by shrinking font when needed
     let lf = isLast ? 9.5 : 8.5;
@@ -506,8 +523,9 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     doc.text(label, margin, y);
     doc.setFont('helvetica', 'normal');
     const lw = doc.getTextWidth(label);
-    doc.text(doc.splitTextToSize(value, usable - lw), margin + lw, y);
-    y += 4.2;
+    const valueLines = doc.splitTextToSize(value, usable - lw);
+    doc.text(valueLines, margin + lw, y);
+    y += Math.max(valueLines.length, 1) * 4.2;
   }
 
   // ── Signature (bottom right) ───────────────────────────────
