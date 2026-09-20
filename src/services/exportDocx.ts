@@ -23,6 +23,18 @@ import { formatDate, formatNumber } from '@/lib/format';
 
 const MM_TO_TWIPS = 56.6929;
 
+// Pick black or white text depending on the background so text is always readable.
+const contrastText = (hex: string): string => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+  if (!m) return '000000';
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum < 140 ? 'FFFFFF' : '000000';
+};
+
 function dataUrlToUint8(dataUrl: string): Uint8Array {
   const [, b64] = dataUrl.split(',');
   const bin = atob(b64 ?? '');
@@ -50,7 +62,7 @@ function para(children: TextRun | TextRun[], opts: { align?: DocxAlign; before?:
   });
 }
 
-function cell(text: string, opts: { bold?: boolean; align?: DocxAlign; width?: string; bg?: string; size?: number } = {}): TableCell {
+function cell(text: string, opts: { bold?: boolean; align?: DocxAlign; width?: string; bg?: string; size?: number; color?: string } = {}): TableCell {
   return new TableCell({
     width: opts.width ? { size: parseFloat(opts.width), type: WidthType.PERCENTAGE } : undefined,
     verticalAlign: VerticalAlign.CENTER,
@@ -59,13 +71,13 @@ function cell(text: string, opts: { bold?: boolean; align?: DocxAlign; width?: s
     children: [
       new Paragraph({
         alignment: opts.align ?? AlignmentType.LEFT,
-        children: [run(text, { bold: opts.bold, size: opts.size })],
+        children: [run(text, { bold: opts.bold, size: opts.size, color: opts.color })],
       }),
     ],
   });
 }
 
-function cellMulti(texts: string[], opts: { bold?: boolean; align?: DocxAlign; width?: string; size?: number; bg?: string } = {}): TableCell {
+function cellMulti(texts: string[], opts: { bold?: boolean; align?: DocxAlign; width?: string; size?: number; bg?: string; color?: string } = {}): TableCell {
   return new TableCell({
     width: opts.width ? { size: parseFloat(opts.width), type: WidthType.PERCENTAGE } : undefined,
     verticalAlign: VerticalAlign.CENTER,
@@ -75,7 +87,7 @@ function cellMulti(texts: string[], opts: { bold?: boolean; align?: DocxAlign; w
       (t) =>
         new Paragraph({
           alignment: opts.align ?? AlignmentType.LEFT,
-          children: [run(t, { bold: opts.bold, size: opts.size })],
+          children: [run(t, { bold: opts.bold, size: opts.size, color: opts.color })],
         }),
     ),
   });
@@ -310,7 +322,7 @@ export async function buildDocx(q: Quotation, template: QuoteTemplate): Promise<
   const aligns: DocxAlign[] = [AlignmentType.CENTER, AlignmentType.LEFT, AlignmentType.CENTER, AlignmentType.CENTER, AlignmentType.RIGHT, AlignmentType.RIGHT];
   const headerRow = new TableRow({
     tableHeader: true,
-    children: headers.map((h, i) => cell(h, { bold: true, align: aligns[i], width: widths[i], bg: template.tableHeaderBg, size: 20 })),
+    children: headers.map((h, i) => cell(h, { bold: true, align: aligns[i], width: widths[i], bg: template.tableHeaderBg, color: contrastText(template.tableHeaderBg), size: 20 })),
   });
 
   const bodyRows = q.items.map((it, i) => {
@@ -353,8 +365,8 @@ export async function buildDocx(q: Quotation, template: QuoteTemplate): Promise<
   totalRows.push(
     new TableRow({
       children: [
-        cell('GRAND TOTAL', { align: AlignmentType.RIGHT, bold: true, bg: template.tableHeaderBg, width: '70', size: 22 }),
-        cell(`${sym} ${totals.rounded.toFixed(2)}`, { align: AlignmentType.RIGHT, bold: true, bg: template.tableHeaderBg, width: '30', size: 22 }),
+        cell('GRAND TOTAL', { align: AlignmentType.RIGHT, bold: true, bg: template.tableHeaderBg, color: contrastText(template.tableHeaderBg), width: '70', size: 22 }),
+        cell(`${sym} ${totals.rounded.toFixed(2)}`, { align: AlignmentType.RIGHT, bold: true, bg: template.tableHeaderBg, color: contrastText(template.tableHeaderBg), width: '30', size: 22 }),
       ],
     }),
   );
