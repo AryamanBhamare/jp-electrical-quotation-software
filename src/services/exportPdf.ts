@@ -202,8 +202,9 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     doc.setFont('helvetica', 'normal');
     if (q.customer.address) {
       for (const line of q.customer.address.split('\n').filter(Boolean)) {
-        doc.text(doc.splitTextToSize(line, leftW), margin, y);
-        y += 4;
+        const addrLines = doc.splitTextToSize(line, leftW);
+        doc.text(addrLines, margin, y);
+        y += addrLines.length * 4;
       }
     }
     const cityLine = [q.customer.city, q.customer.state].filter(Boolean).join(', ');
@@ -222,8 +223,9 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
       q.customer.email ? `Email: ${q.customer.email}` : '',
     ].filter(Boolean).join('\n');
     if (billContact) {
-      doc.text(doc.splitTextToSize(billContact, leftW), margin, y);
-      y += billContact.split('\n').length * 3.6 + 1;
+      const bcLines = doc.splitTextToSize(billContact, leftW);
+      doc.text(bcLines, margin, y);
+      y += bcLines.length * 3.6 + 1;
     }
     y += 1;
 
@@ -269,8 +271,9 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     doc.setFont('helvetica', 'normal');
     if (q.customer.address) {
       for (const line of q.customer.address.split('\n').filter(Boolean)) {
-        doc.text(doc.splitTextToSize(line, usable), margin, y);
-        y += 4;
+        const addrLines = doc.splitTextToSize(line, usable);
+        doc.text(addrLines, margin, y);
+        y += addrLines.length * 4;
       }
     }
     const cityLine = [q.customer.city, q.customer.state].filter(Boolean).join(', ');
@@ -289,8 +292,9 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     if (custContact) {
       doc.setFontSize(7.5);
       doc.setTextColor(...SUB);
-      doc.text(doc.splitTextToSize(custContact, usable), margin, y);
-      y += 4;
+      const ccLines = doc.splitTextToSize(custContact, usable);
+      doc.text(ccLines, margin, y);
+      y += ccLines.length * 3.6;
     }
     y += 1;
   }
@@ -317,8 +321,9 @@ export async function buildPdf(q: Quotation, template: QuoteTemplate): Promise<B
     doc.text('REF:', margin, y);
     const refW = doc.getTextWidth('REF:') + 2;
     doc.setFont('helvetica', 'normal');
-    doc.text(doc.splitTextToSize(refText, usable - refW), margin + refW, y);
-    y += 4.4;
+    const refLines = doc.splitTextToSize(refText, usable - refW);
+    doc.text(refLines, margin + refW, y);
+    y += Math.max(4.4, refLines.length * 4.2);
   }
 
   // ── Opening paragraph ──────────────────────────────────────
